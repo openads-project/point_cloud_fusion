@@ -21,7 +21,12 @@ class PointCloudFusion : public rclcpp::Node {
 
  public:
 
-  PointCloudFusion();
+  /**
+   * @brief Constructor
+   *
+   * @param options node options
+   */
+  explicit PointCloudFusion(const rclcpp::NodeOptions& options);
 
  private:
 

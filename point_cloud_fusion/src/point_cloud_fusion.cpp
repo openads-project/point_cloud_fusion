@@ -2,11 +2,14 @@
 
 #include <point_cloud_fusion/point_cloud_fusion.hpp>
 
+#include <rclcpp_components/register_node_macro.hpp>
+RCLCPP_COMPONENTS_REGISTER_NODE(point_cloud_fusion::PointCloudFusion)
+
 
 namespace point_cloud_fusion {
 
 
-PointCloudFusion::PointCloudFusion() : Node("point_cloud_fusion") {
+PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("point_cloud_fusion", options) {
 
   this->declareAndLoadParameter("target_frame", target_frame_, "Target frame of fused point cloud", false, true);
   this->setup();
@@ -107,20 +110,10 @@ void PointCloudFusion::topicCallback(const sensor_msgs::msg::PointCloud2::ConstS
   RCLCPP_INFO(this->get_logger(), "Received pointcloud1");
 
   // publish message
-  sensor_msgs::msg::PointCloud2 fused_pointcloud;
-  publisher_->publish(fused_pointcloud);
-  RCLCPP_INFO(this->get_logger(), "Publised fused point cloud.");
+  sensor_msgs::msg::PointCloud2::UniquePtr pointcloud_fused = std::make_unique<sensor_msgs::msg::PointCloud2>();
+  publisher_->publish(std::move(pointcloud_fused));
+  RCLCPP_INFO(this->get_logger(), "Published fused point cloud");
 }
 
 
-}
-
-
-int main(int argc, char *argv[]) {
-
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<point_cloud_fusion::PointCloudFusion>());
-  rclcpp::shutdown();
-
-  return 0;
 }
