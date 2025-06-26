@@ -4,8 +4,15 @@
 #include <string>
 #include <vector>
 
+#include <message_filters/subscriber.h>
+#include <message_filters/sync_policies/approximate_time.h>
+#include <message_filters/synchronizer.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl_conversions/pcl_conversions.h>
 #include <rclcpp/rclcpp.hpp>
-#include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 
 namespace point_cloud_fusion {
 
@@ -62,11 +69,11 @@ class PointCloudFusion : public rclcpp::Node {
   void setup();
 
   /**
-   * @brief Processes messages received by a subscriber
+   * @brief Process two input point clouds to be fused
    *
    * @param msg message
    */
-  void topicCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg);
+  void pointCloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg1, const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg2);
 
  private:
 
@@ -76,17 +83,30 @@ class PointCloudFusion : public rclcpp::Node {
   std::vector<std::tuple<std::string, std::function<void(const rclcpp::Parameter &)>>> auto_reconfigurable_params_;
 
   /**
-   * @brief Subscriber
+   * @brief Subscribers
    */
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscriber_;
+  std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>> cloud_subscriber1_;
+  std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>> cloud_subscriber2_;
 
   /**
    * @brief Publisher
    */
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_publisher_;
 
   /**
-   * @brief Dummy parameter (parameter) 
+   * @brief Synchronizer for the two point cloud subscribers
+   */
+  using SyncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2>;
+  std::shared_ptr<message_filters::Synchronizer<SyncPolicy>> cloud_synchronizer_;
+
+  /**
+   * @brief TF2 buffer and transform listener
+   */
+  std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+
+  /**
+   * @brief Target frame to which all input point clouds are transformed before fusion
    */
   std::string target_frame_ = "base_link";
 };
