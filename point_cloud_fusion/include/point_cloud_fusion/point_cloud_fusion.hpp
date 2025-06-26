@@ -5,8 +5,7 @@
 #include <vector>
 
 #include <rclcpp/rclcpp.hpp>
-#include <std_msgs/msg/int32.hpp>
-
+#include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
 namespace point_cloud_fusion {
 
@@ -53,14 +52,6 @@ class PointCloudFusion : public rclcpp::Node {
                                const std::string &additional_constraints = "");
 
   /**
-   * @brief Handles reconfiguration when a parameter value is changed
-   *
-   * @param parameters parameters
-   * @return parameter change result
-   */
-  rcl_interfaces::msg::SetParametersResult parametersCallback(const std::vector<rclcpp::Parameter>& parameters);
-
-  /**
    * @brief Sets up subscribers, publishers, etc. to configure the node
    */
   void setup();
@@ -70,7 +61,7 @@ class PointCloudFusion : public rclcpp::Node {
    *
    * @param msg message
    */
-  void topicCallback(const std_msgs::msg::Int32::ConstSharedPtr& msg);
+  void topicCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg);
 
  private:
 
@@ -80,24 +71,19 @@ class PointCloudFusion : public rclcpp::Node {
   std::vector<std::tuple<std::string, std::function<void(const rclcpp::Parameter &)>>> auto_reconfigurable_params_;
 
   /**
-   * @brief Callback handle for dynamic parameter reconfiguration
-   */
-  OnSetParametersCallbackHandle::SharedPtr parameters_callback_;
-
-  /**
    * @brief Subscriber
    */
-  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr subscriber_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscriber_;
 
   /**
    * @brief Publisher
    */
-  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_;
 
   /**
    * @brief Dummy parameter (parameter) 
    */
-  double param_ = 1.0;
+  std::string target_frame_ = "base_link";
 };
 
 

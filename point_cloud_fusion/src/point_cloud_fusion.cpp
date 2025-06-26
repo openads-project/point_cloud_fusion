@@ -8,7 +8,7 @@ namespace point_cloud_fusion {
 
 PointCloudFusion::PointCloudFusion() : Node("point_cloud_fusion") {
 
-  this->declareAndLoadParameter("param", param_, "TODO", true, false, false, 0.0, 10.0, 1.0);
+  this->declareAndLoadParameter("target_frame", target_frame_, "Target frame of fused point cloud", false, true);
   this->setup();
 }
 
@@ -90,49 +90,26 @@ void PointCloudFusion::declareAndLoadParameter(const std::string& name,
 }
 
 
-rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(const std::vector<rclcpp::Parameter>& parameters) {
-
-  for (const auto& param : parameters) {
-    for (auto& auto_reconfigurable_param : auto_reconfigurable_params_) {
-      if (param.get_name() == std::get<0>(auto_reconfigurable_param)) {
-        std::get<1>(auto_reconfigurable_param)(param);
-        RCLCPP_INFO(this->get_logger(), "Reconfigured parameter '%s'", param.get_name().c_str());
-        break;
-      }
-    }
-  }
-
-  rcl_interfaces::msg::SetParametersResult result;
-  result.successful = true;
-
-  return result;
-}
-
-
 void PointCloudFusion::setup() {
 
-  // callback for dynamic parameter configuration
-  parameters_callback_ = this->add_on_set_parameters_callback(std::bind(&PointCloudFusion::parametersCallback, this, std::placeholders::_1));
-
   // subscriber for handling incoming messages
-  subscriber_ = this->create_subscription<std_msgs::msg::Int32>("~/input", 10, std::bind(&PointCloudFusion::topicCallback, this, std::placeholders::_1));
+  subscriber_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("~/input", 10, std::bind(&PointCloudFusion::topicCallback, this, std::placeholders::_1));
   RCLCPP_INFO(this->get_logger(), "Subscribed to '%s'", subscriber_->get_topic_name());
 
   // publisher for publishing outgoing messages
-  publisher_ = this->create_publisher<std_msgs::msg::Int32>("~/output", 10);
+  publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("~/output", 10);
   RCLCPP_INFO(this->get_logger(), "Publishing to '%s'", publisher_->get_topic_name());
 }
 
 
-void PointCloudFusion::topicCallback(const std_msgs::msg::Int32::ConstSharedPtr& msg) {
+void PointCloudFusion::topicCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg) {
 
-  RCLCPP_INFO(this->get_logger(), "Message received: '%d'", msg->data);
+  RCLCPP_INFO(this->get_logger(), "Received pointcloud1");
 
   // publish message
-  std_msgs::msg::Int32 out_msg;
-  out_msg.data = msg->data;
-  publisher_->publish(out_msg);
-  RCLCPP_INFO(this->get_logger(), "Message published: '%d'", out_msg.data);
+  sensor_msgs::msg::PointCloud2 fused_pointcloud;
+  publisher_->publish(fused_pointcloud);
+  RCLCPP_INFO(this->get_logger(), "Publised fused point cloud.");
 }
 
 

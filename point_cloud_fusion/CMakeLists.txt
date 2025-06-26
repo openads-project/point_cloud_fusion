@@ -7,7 +7,9 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(tf2_sensor_msgs REQUIRED)
 
 set(TARGET_NAME point_cloud_fusion)
 
@@ -21,7 +23,9 @@ target_compile_features(${TARGET_NAME} PUBLIC c_std_99 cxx_std_17)
 
 ament_target_dependencies(${TARGET_NAME}
   rclcpp
+  sensor_msgs
   std_msgs
+  tf2_sensor_msgs
 )
 
 install(TARGETS ${TARGET_NAME}
