@@ -119,32 +119,28 @@ void PointCloudFusion::pointCloudCallback(const sensor_msgs::msg::PointCloud2::C
                                           const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg2) {
   // transform sensor_msgs::msg::PointCloud2 msg if required
   sensor_msgs::msg::PointCloud2 transformed_point_cloud_1, transformed_point_cloud_2, fused_point_cloud;
-  if (msg1->header.frame_id != target_frame_) {
+  std::vector<std::pair<const sensor_msgs::msg::PointCloud2::ConstSharedPtr&, sensor_msgs::msg::PointCloud2&>> point_clouds = {
+    {msg1, transformed_point_cloud_1},
+    {msg2, transformed_point_cloud_2}
+  };
+
+  for (auto& [msg, transformed_point_cloud] : point_clouds) {
+    if (msg->header.frame_id != target_frame_) {
     try {
-      tf_buffer_->transform(*msg1, transformed_point_cloud_1, target_frame_, tf2::durationFromSec(0.1));
+        tf_buffer_->transform(*msg, transformed_point_cloud, target_frame_, tf2::durationFromSec(0.1));
     } catch (const tf2::TransformException& ex) {
       RCLCPP_ERROR(this->get_logger(),
-                   "Cannot tranform Pointcloud 1: Transformation from its frame (%s) to inference_frame "
+                    "Cannot transform Pointcloud: Transformation from its frame (%s) to inference_frame "
                    "(%s) not found: %s",
-                   msg1->header.frame_id.c_str(), target_frame_.c_str(), ex.what());
+                    msg->header.frame_id.c_str(), target_frame_.c_str(), ex.what());
       return;
     }
   } else {
-    transformed_point_cloud_1 = *msg1;
+      transformed_point_cloud = *msg;
   }
-  if (msg2->header.frame_id != target_frame_) {
-    try {
-      tf_buffer_->transform(*msg2, transformed_point_cloud_2, target_frame_, tf2::durationFromSec(0.1));
-    } catch (const tf2::TransformException& ex) {
-      RCLCPP_ERROR(this->get_logger(),
-                   "Cannot tranform Pointcloud 2: Transformation from its frame (%s) to inference_frame "
-                   "(%s) not found: %s",
-                   msg2->header.frame_id.c_str(), target_frame_.c_str(), ex.what());
-      return;
-    }
-  } else {
-    transformed_point_cloud_2 = *msg2;
   }
+
+  // concatenate the two transformed point clouds
   pcl::concatenatePointCloud(transformed_point_cloud_1, transformed_point_cloud_2, fused_point_cloud);
   cloud_publisher_->publish(fused_point_cloud);
   RCLCPP_INFO(this->get_logger(), "Published fused point cloud (synchronized)");
