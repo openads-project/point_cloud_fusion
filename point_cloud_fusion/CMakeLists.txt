@@ -11,6 +11,9 @@ find_package(pcl_ros REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_sensor_msgs REQUIRED)
 
 set(TARGET_NAME point_cloud_fusion_component)
 
@@ -33,6 +36,9 @@ ament_target_dependencies(${TARGET_NAME}
   rclcpp
   rclcpp_components
   sensor_msgs
+  tf2
+  tf2_ros
+  tf2_sensor_msgs
 )
 
 install(TARGETS ${TARGET_NAME}

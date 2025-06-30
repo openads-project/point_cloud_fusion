@@ -12,7 +12,8 @@ from launch_ros.actions import Node, SetParameter
 def generate_launch_description():
 
     remappable_topics = [
-        DeclareLaunchArgument("input_topic", default_value="~/input"),
+        DeclareLaunchArgument("input_topic1", default_value="~/input1"),
+        DeclareLaunchArgument("input_topic2", default_value="~/input2"),
         DeclareLaunchArgument("output_topic", default_value="~/output"),
     ]
 
