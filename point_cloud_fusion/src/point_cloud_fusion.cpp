@@ -104,7 +104,7 @@ void PointCloudFusion::setup() {
   cloud_subscriber2_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(this, "~/input2");
   
   // create a synchronizer with approximate time policy
-  cloud_synchronizer_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(SyncPolicy(10), *cloud_subscriber1_, *cloud_subscriber2_);
+  cloud_synchronizer_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(SyncPolicy(1), *cloud_subscriber1_, *cloud_subscriber2_);
   cloud_synchronizer_->registerCallback(std::bind(&PointCloudFusion::pointCloudCallback, this, std::placeholders::_1, std::placeholders::_2));
   
   // create publisher
