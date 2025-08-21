@@ -104,8 +104,8 @@ void PointCloudFusion::setup() {
   cloud_subscriber2_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(this, "~/input2");
   
   // create a synchronizer with approximate time policy
-  cloud_synchronizer_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(SyncPolicy(20), *cloud_subscriber1_, *cloud_subscriber2_);
-  cloud_synchronizer_->setMaxIntervalDuration(rclcpp::Duration::from_seconds(0.05));
+  cloud_synchronizer_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(SyncPolicy(20), *cloud_subscriber1_, *cloud_subscriber2_); // queue size
+  cloud_synchronizer_->setMaxIntervalDuration(rclcpp::Duration::from_seconds(0.05));                                                           // max interval duration: only pair point clouds if their timestamps differ by ≤ 50 ms.
   cloud_synchronizer_->registerCallback(std::bind(&PointCloudFusion::pointCloudCallback, this, std::placeholders::_1, std::placeholders::_2));
   
   // create publisher
