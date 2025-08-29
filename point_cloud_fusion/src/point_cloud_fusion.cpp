@@ -110,8 +110,10 @@ void PointCloudFusion::setup() {
   // create subscribers
   cloud_subscriber1_ = std::make_shared<point_cloud_transport::SubscriberFilter>();
   cloud_subscriber2_ = std::make_shared<point_cloud_transport::SubscriberFilter>();
-  cloud_subscriber1_->subscribe(this->shared_from_this(), "~/input1", point_cloud_transport1_);
-  cloud_subscriber2_->subscribe(this->shared_from_this(), "~/input2", point_cloud_transport2_);
+  std::string input1_topic = this->get_node_topics_interface()->resolve_topic_name("~/input1");
+  std::string input2_topic = this->get_node_topics_interface()->resolve_topic_name("~/input2");
+  cloud_subscriber1_->subscribe(this->shared_from_this(), input1_topic, point_cloud_transport1_);
+  cloud_subscriber2_->subscribe(this->shared_from_this(), input2_topic, point_cloud_transport2_);
 
   // create a synchronizer with approximate time policy
   cloud_synchronizer_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(SyncPolicy(20), *cloud_subscriber1_, *cloud_subscriber2_); // queue size
