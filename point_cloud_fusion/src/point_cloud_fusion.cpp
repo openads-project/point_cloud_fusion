@@ -12,8 +12,9 @@ namespace point_cloud_fusion {
 PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("point_cloud_fusion", options) {
 
   this->declareAndLoadParameter("target_frame", target_frame_, "Target frame of fused point cloud", false, true);
-  this->declareAndLoadParameter("point_cloud_transport", point_cloud_transport_, "Transport to be used for point cloud transport");
-  
+  this->declareAndLoadParameter("point_cloud_transport1", point_cloud_transport1_, "Transport to be used for first point cloud subscriber");
+  this->declareAndLoadParameter("point_cloud_transport2", point_cloud_transport2_, "Transport to be used for second point cloud subscriber");
+
   // run setup after constructor has finished to enable shared_from_this()
   setup_timer_ = this->create_wall_timer(std::chrono::milliseconds(1), [this]() {
     setup();
@@ -109,8 +110,8 @@ void PointCloudFusion::setup() {
   // create subscribers
   cloud_subscriber1_ = std::make_shared<point_cloud_transport::SubscriberFilter>();
   cloud_subscriber2_ = std::make_shared<point_cloud_transport::SubscriberFilter>();
-  cloud_subscriber1_->subscribe(this->shared_from_this(), "~/input1", point_cloud_transport_);
-  cloud_subscriber2_->subscribe(this->shared_from_this(), "~/input2", point_cloud_transport_);
+  cloud_subscriber1_->subscribe(this->shared_from_this(), "~/input1", point_cloud_transport1_);
+  cloud_subscriber2_->subscribe(this->shared_from_this(), "~/input2", point_cloud_transport2_);
 
   // create a synchronizer with approximate time policy
   cloud_synchronizer_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(SyncPolicy(20), *cloud_subscriber1_, *cloud_subscriber2_); // queue size

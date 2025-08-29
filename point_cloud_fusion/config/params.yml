@@ -1,4 +1,5 @@
 /**/*:
   ros__parameters:
     target_frame: "base_link"
-    point_cloud_transport: "zstd"
+    point_cloud_transport1: "raw"
+    point_cloud_transport2: "raw"

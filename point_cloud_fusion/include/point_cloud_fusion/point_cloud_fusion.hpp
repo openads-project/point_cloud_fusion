@@ -111,7 +111,16 @@ class PointCloudFusion : public rclcpp::Node {
    * @brief Target frame to which all input point clouds are transformed before fusion
    */
   std::string target_frame_ = "base_link";
-  std::string point_cloud_transport_;
+
+  /**
+   * @brief Transport methods for the point cloud subscribers
+   */
+  std::string point_cloud_transport1_;
+  std::string point_cloud_transport2_;
+
+  /**
+   * @brief Timer to delay setup
+   */
   rclcpp::TimerBase::SharedPtr setup_timer_;
 };
 
