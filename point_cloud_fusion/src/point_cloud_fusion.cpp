@@ -12,21 +12,28 @@ namespace point_cloud_fusion {
 PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("point_cloud_fusion", options) {
 
   this->declareAndLoadParameter("target_frame", target_frame_, "Target frame of fused point cloud", false, true);
-  this->setup();
+  this->declareAndLoadParameter("point_cloud_transport", point_cloud_transport_, "Transport to be used for point cloud transport");
+  
+  // run setup after constructor has finished to enable shared_from_this()
+  setup_timer_ = this->create_wall_timer(std::chrono::milliseconds(1), [this]() {
+    setup();
+    setup_timer_->cancel();
+  });
+
 }
 
 
 template <typename T>
 void PointCloudFusion::declareAndLoadParameter(const std::string& name,
-                                                         T& param,
-                                                         const std::string& description,
-                                                         const bool add_to_auto_reconfigurable_params,
-                                                         const bool is_required,
-                                                         const bool read_only,
-                                                         const std::optional<double>& from_value,
-                                                         const std::optional<double>& to_value,
-                                                         const std::optional<double>& step_value,
-                                                         const std::string& additional_constraints) {
+                                               T& param,
+                                               const std::string& description,
+                                               const bool add_to_auto_reconfigurable_params,
+                                               const bool is_required,
+                                               const bool read_only,
+                                               const std::optional<double>& from_value,
+                                               const std::optional<double>& to_value,
+                                               const std::optional<double>& step_value,
+                                               const std::string& additional_constraints) {
 
   rcl_interfaces::msg::ParameterDescriptor param_desc;
   param_desc.description = description;
@@ -100,19 +107,21 @@ void PointCloudFusion::setup() {
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
   // create subscribers
-  cloud_subscriber1_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(this, "~/input1");
-  cloud_subscriber2_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(this, "~/input2");
-  
+  cloud_subscriber1_ = std::make_shared<point_cloud_transport::SubscriberFilter>();
+  cloud_subscriber2_ = std::make_shared<point_cloud_transport::SubscriberFilter>();
+  cloud_subscriber1_->subscribe(this->shared_from_this(), "~/input1", point_cloud_transport_);
+  cloud_subscriber2_->subscribe(this->shared_from_this(), "~/input2", point_cloud_transport_);
+
   // create a synchronizer with approximate time policy
   cloud_synchronizer_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(SyncPolicy(20), *cloud_subscriber1_, *cloud_subscriber2_); // queue size
   cloud_synchronizer_->setMaxIntervalDuration(rclcpp::Duration::from_seconds(0.05));                                                           // max interval duration: only pair point clouds if their timestamps differ by ≤ 50 ms.
   cloud_synchronizer_->registerCallback(std::bind(&PointCloudFusion::pointCloudCallback, this, std::placeholders::_1, std::placeholders::_2));
   
   // create publisher
-  cloud_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("~/output", 10);
-  
+  point_cloud_transport::PointCloudTransport pct(this->shared_from_this());
+  cloud_publisher_ = std::make_shared<point_cloud_transport::Publisher>(pct.advertise("~/output", 10));
   RCLCPP_INFO(this->get_logger(), "Subscribed to '%s' and '%s' (synchronized)", cloud_subscriber1_->getTopic().c_str(), cloud_subscriber2_->getTopic().c_str());
-  RCLCPP_INFO(this->get_logger(), "Publishing to '%s'", cloud_publisher_->get_topic_name());
+  RCLCPP_INFO(this->get_logger(), "Publishing to '%s'", cloud_publisher_->getTopic().c_str());
 }
 
 
