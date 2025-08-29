@@ -27,10 +27,12 @@ This package provides a node that fuses two input point clouds and publishes the
 
 | Topic | Type | Description |
 | --- | --- | --- |
-| `~/output` | `sensor_msgs::msg::PointCloud2` | Fused point cloud |
+| `~/output` | `sensor_msgs::msg::PointCloud2` | Managed by `point_cloud_transport`, so additional transport-specific output topics are automatically created (e.g., `~/output/compressed`, `~/output/draco`). |
 
 ### Parameters
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `target_frame` | `string` | Target frame to which the input point clouds are transformed before fusion. |
+| `point_cloud_transport1` | `string` | Transport method for the first point cloud subscriber (`raw\|draco\|zlib\|zstd\|cloudini`). |
+| `point_cloud_transport2` | `string` | Transport method for the second point cloud subscriber (`raw\|draco\|zlib\|zstd\|cloudini`). |
