@@ -13,8 +13,6 @@ namespace point_cloud_fusion {
 PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("point_cloud_fusion", options) {
 
   this->declareAndLoadParameter("target_frame", target_frame_, "Target frame of fused point cloud", false, true);
-  this->declareAndLoadParameter("point_cloud_transport1", point_cloud_transport1_, "Transport to be used for first point cloud subscriber");
-  this->declareAndLoadParameter("point_cloud_transport2", point_cloud_transport2_, "Transport to be used for second point cloud subscriber");
 
   // run setup after constructor has finished to enable shared_from_this()
   setup_timer_ = this->create_wall_timer(std::chrono::milliseconds(1), [this]() {
@@ -109,12 +107,14 @@ void PointCloudFusion::setup() {
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
   // create subscribers
-  cloud_subscriber1_ = std::make_shared<point_cloud_transport::SubscriberFilter>();
-  cloud_subscriber2_ = std::make_shared<point_cloud_transport::SubscriberFilter>();
   std::string input1_topic = this->get_node_topics_interface()->resolve_topic_name("~/input1");
   std::string input2_topic = this->get_node_topics_interface()->resolve_topic_name("~/input2");
-  cloud_subscriber1_->subscribe(this->shared_from_this(), input1_topic, point_cloud_transport1_);
-  cloud_subscriber2_->subscribe(this->shared_from_this(), input2_topic, point_cloud_transport2_);
+  point_cloud_transport::TransportHints transport_hint1(this->shared_from_this(), "raw", "point_cloud_transport1");
+  point_cloud_transport::TransportHints transport_hint2(this->shared_from_this(), "raw", "point_cloud_transport2");
+  cloud_subscriber1_ = std::make_shared<point_cloud_transport::SubscriberFilter>();
+  cloud_subscriber2_ = std::make_shared<point_cloud_transport::SubscriberFilter>();
+  cloud_subscriber1_->subscribe(this->shared_from_this(), input1_topic, transport_hint1.getTransport());
+  cloud_subscriber2_->subscribe(this->shared_from_this(), input2_topic, transport_hint2.getTransport());
 
   // create a synchronizer with approximate time policy
   cloud_synchronizer_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(SyncPolicy(20), *cloud_subscriber1_, *cloud_subscriber2_); // queue size

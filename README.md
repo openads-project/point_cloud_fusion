@@ -34,5 +34,3 @@ This package provides a node that fuses two input point clouds and publishes the
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `target_frame` | `string` | Target frame to which the input point clouds are transformed before fusion. |
-| `point_cloud_transport1` | `string` | Transport method for the first point cloud subscriber (`raw\|draco\|zlib\|zstd\|cloudini`). |
-| `point_cloud_transport2` | `string` | Transport method for the second point cloud subscriber (`raw\|draco\|zlib\|zstd\|cloudini`). |
