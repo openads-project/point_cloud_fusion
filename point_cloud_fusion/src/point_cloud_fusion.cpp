@@ -132,8 +132,6 @@ void PointCloudFusion::setup() {
 
 void PointCloudFusion::pointCloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg1,
                                           const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg2) {
-  auto start_time = std::chrono::high_resolution_clock::now();
-
   RCLCPP_INFO(this->get_logger(), "Received synchronized point clouds - timestamp diff: %.3f ms",
     std::abs((rclcpp::Time(msg1->header.stamp) - rclcpp::Time(msg2->header.stamp)).seconds() * 1000.0));
 
@@ -147,19 +145,10 @@ void PointCloudFusion::pointCloudCallback(const sensor_msgs::msg::PointCloud2::C
     {msg2, transformed_point_cloud_2}
   };
 
-  auto transform_start = std::chrono::high_resolution_clock::now();
-  int transform_count = 0;
-
   for (auto& [msg, transformed_point_cloud] : point_clouds) {
     if (msg->header.frame_id != target_frame_) {
-      transform_count++;
-      auto single_transform_start = std::chrono::high_resolution_clock::now();
       try {
         tf_buffer_->transform(*msg, *transformed_point_cloud, target_frame_, tf2::durationFromSec(0.1));
-        auto single_transform_end = std::chrono::high_resolution_clock::now();
-        auto single_transform_duration = std::chrono::duration_cast<std::chrono::microseconds>(single_transform_end - single_transform_start);
-        RCLCPP_INFO(this->get_logger(), "Transform %s -> %s took %.2f ms",
-          msg->header.frame_id.c_str(), target_frame_.c_str(), single_transform_duration.count() / 1000.0);
       } catch (const tf2::TransformException& ex) {
         RCLCPP_ERROR(this->get_logger(),
           "Cannot transform Pointcloud: Transformation from its frame (%s) to inference_frame (%s) not found: %s",
@@ -168,38 +157,16 @@ void PointCloudFusion::pointCloudCallback(const sensor_msgs::msg::PointCloud2::C
       }
     } else {
       *transformed_point_cloud = *msg;
-      RCLCPP_INFO(this->get_logger(), "No transform needed for frame %s", msg->header.frame_id.c_str());
     }
   }
 
-  auto transform_end = std::chrono::high_resolution_clock::now();
-  auto transform_duration = std::chrono::duration_cast<std::chrono::microseconds>(transform_end - transform_start);
-  RCLCPP_INFO(this->get_logger(), "Total transform time: %.2f ms (%d transforms)",
-    transform_duration.count() / 1000.0, transform_count);
-
   // concatenate the two transformed point clouds
-  auto concat_start = std::chrono::high_resolution_clock::now();
   pcl::concatenatePointCloud(*transformed_point_cloud_1, *transformed_point_cloud_2, *fused_point_cloud);
-  auto concat_end = std::chrono::high_resolution_clock::now();
-  auto concat_duration = std::chrono::duration_cast<std::chrono::microseconds>(concat_end - concat_start);
-
   fused_point_cloud->header.stamp =    // apply time stamp of the most recent point cloud
     (rclcpp::Time(msg1->header.stamp) > rclcpp::Time(msg2->header.stamp))
       ? msg1->header.stamp : msg2->header.stamp;
-
-  auto publish_start = std::chrono::high_resolution_clock::now();
   cloud_publisher_->publish(std::move(fused_point_cloud));
-  auto publish_end = std::chrono::high_resolution_clock::now();
-  auto publish_duration = std::chrono::duration_cast<std::chrono::microseconds>(publish_end - publish_start);
-
-  auto total_end = std::chrono::high_resolution_clock::now();
-  auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(total_end - start_time);
-
-  RCLCPP_INFO(this->get_logger(),
-    "Timing - Concat: %.2f ms, Publish: %.2f ms, Total: %.2f ms",
-    concat_duration.count() / 1000.0,
-    publish_duration.count() / 1000.0,
-    total_duration.count() / 1000.0);
+  RCLCPP_INFO(this->get_logger(), "Published fused point cloud (synchronized)");
 }
 
 
