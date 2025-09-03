@@ -120,7 +120,7 @@ void PointCloudFusion::setup() {
   cloud_synchronizer_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(SyncPolicy(20), *cloud_subscriber1_, *cloud_subscriber2_); // queue size
   cloud_synchronizer_->setMaxIntervalDuration(rclcpp::Duration::from_seconds(0.05));                                                           // max interval duration: only pair point clouds if their timestamps differ by ≤ 50 ms.
   cloud_synchronizer_->registerCallback(std::bind(&PointCloudFusion::pointCloudCallback, this, std::placeholders::_1, std::placeholders::_2));
-  
+
   // create publisher
   point_cloud_transport::PointCloudTransport pct(this->shared_from_this());
   std::string output_topic_name = this->get_node_topics_interface()->resolve_topic_name("~/output");
@@ -133,10 +133,10 @@ void PointCloudFusion::setup() {
 void PointCloudFusion::pointCloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg1,
                                           const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg2) {
   auto start_time = std::chrono::high_resolution_clock::now();
-  
-  RCLCPP_INFO(this->get_logger(), "Received synchronized point clouds - timestamp diff: %.3f ms", 
+
+  RCLCPP_INFO(this->get_logger(), "Received synchronized point clouds - timestamp diff: %.3f ms",
     std::abs((rclcpp::Time(msg1->header.stamp) - rclcpp::Time(msg2->header.stamp)).seconds() * 1000.0));
-  
+
   // transform sensor_msgs::msg::PointCloud2 msg if required
   sensor_msgs::msg::PointCloud2::UniquePtr transformed_point_cloud_1 = std::make_unique<sensor_msgs::msg::PointCloud2>();
   sensor_msgs::msg::PointCloud2::UniquePtr transformed_point_cloud_2 = std::make_unique<sensor_msgs::msg::PointCloud2>();
@@ -149,7 +149,7 @@ void PointCloudFusion::pointCloudCallback(const sensor_msgs::msg::PointCloud2::C
 
   auto transform_start = std::chrono::high_resolution_clock::now();
   int transform_count = 0;
-  
+
   for (auto& [msg, transformed_point_cloud] : point_clouds) {
     if (msg->header.frame_id != target_frame_) {
       transform_count++;
@@ -158,7 +158,7 @@ void PointCloudFusion::pointCloudCallback(const sensor_msgs::msg::PointCloud2::C
         tf_buffer_->transform(*msg, *transformed_point_cloud, target_frame_, tf2::durationFromSec(0.1));
         auto single_transform_end = std::chrono::high_resolution_clock::now();
         auto single_transform_duration = std::chrono::duration_cast<std::chrono::microseconds>(single_transform_end - single_transform_start);
-        RCLCPP_INFO(this->get_logger(), "Transform %s -> %s took %.2f ms", 
+        RCLCPP_INFO(this->get_logger(), "Transform %s -> %s took %.2f ms",
           msg->header.frame_id.c_str(), target_frame_.c_str(), single_transform_duration.count() / 1000.0);
       } catch (const tf2::TransformException& ex) {
         RCLCPP_ERROR(this->get_logger(),
@@ -171,10 +171,10 @@ void PointCloudFusion::pointCloudCallback(const sensor_msgs::msg::PointCloud2::C
       RCLCPP_INFO(this->get_logger(), "No transform needed for frame %s", msg->header.frame_id.c_str());
     }
   }
-  
+
   auto transform_end = std::chrono::high_resolution_clock::now();
   auto transform_duration = std::chrono::duration_cast<std::chrono::microseconds>(transform_end - transform_start);
-  RCLCPP_INFO(this->get_logger(), "Total transform time: %.2f ms (%d transforms)", 
+  RCLCPP_INFO(this->get_logger(), "Total transform time: %.2f ms (%d transforms)",
     transform_duration.count() / 1000.0, transform_count);
 
   // concatenate the two transformed point clouds
@@ -182,23 +182,23 @@ void PointCloudFusion::pointCloudCallback(const sensor_msgs::msg::PointCloud2::C
   pcl::concatenatePointCloud(*transformed_point_cloud_1, *transformed_point_cloud_2, *fused_point_cloud);
   auto concat_end = std::chrono::high_resolution_clock::now();
   auto concat_duration = std::chrono::duration_cast<std::chrono::microseconds>(concat_end - concat_start);
-  
+
   fused_point_cloud->header.stamp =    // apply time stamp of the most recent point cloud
     (rclcpp::Time(msg1->header.stamp) > rclcpp::Time(msg2->header.stamp))
       ? msg1->header.stamp : msg2->header.stamp;
-  
+
   auto publish_start = std::chrono::high_resolution_clock::now();
   cloud_publisher_->publish(std::move(fused_point_cloud));
   auto publish_end = std::chrono::high_resolution_clock::now();
   auto publish_duration = std::chrono::duration_cast<std::chrono::microseconds>(publish_end - publish_start);
-  
+
   auto total_end = std::chrono::high_resolution_clock::now();
   auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(total_end - start_time);
-  
-  RCLCPP_INFO(this->get_logger(), 
-    "Timing - Concat: %.2f ms, Publish: %.2f ms, Total: %.2f ms", 
+
+  RCLCPP_INFO(this->get_logger(),
+    "Timing - Concat: %.2f ms, Publish: %.2f ms, Total: %.2f ms",
     concat_duration.count() / 1000.0,
-    publish_duration.count() / 1000.0, 
+    publish_duration.count() / 1000.0,
     total_duration.count() / 1000.0);
 }
 
