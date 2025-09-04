@@ -14,8 +14,8 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
 
   this->declareAndLoadParameter("target_frame", target_frame_, "Target frame of fused point cloud", false, true);
   this->declareAndLoadParameter("input_topics", input_topics_, "List of input point cloud topics", false, true);
-  this->declareAndLoadParameter("input_transport_hints", input_transport_hints_, "List of transport hints (one per input)", false, false);
-  this->declareAndLoadParameter("max_time_diff_sec", max_time_diff_sec_, "Max time diff for synchronization (seconds)", false, false, false, 0.0, 1.0);
+  this->declareAndLoadParameter("input_transport_hints", input_transport_hints_, "List of transport hints (one per input)", false);
+  this->declareAndLoadParameter("max_time_diff_sec", max_time_diff_sec_, "Max time diff for synchronization (seconds)");
 
   // run setup after constructor has finished to enable shared_from_this()
   setup_timer_ = this->create_wall_timer(std::chrono::milliseconds(1), [this]() {
