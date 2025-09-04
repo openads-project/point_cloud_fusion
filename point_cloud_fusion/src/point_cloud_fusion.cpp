@@ -13,6 +13,9 @@ namespace point_cloud_fusion {
 PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("point_cloud_fusion", options) {
 
   this->declareAndLoadParameter("target_frame", target_frame_, "Target frame of fused point cloud", false, true);
+  this->declareAndLoadParameter("input_topics", input_topics_, "List of input point cloud topics", false, true);
+  this->declareAndLoadParameter("input_transport_hints", input_transport_hints_, "List of transport hints (one per input)", false, false);
+  this->declareAndLoadParameter("max_time_diff_sec", max_time_diff_sec_, "Max time diff for synchronization (seconds)", false, false, false, 0.0, 1.0);
 
   // run setup after constructor has finished to enable shared_from_this()
   setup_timer_ = this->create_wall_timer(std::chrono::milliseconds(1), [this]() {
@@ -106,67 +109,117 @@ void PointCloudFusion::setup() {
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-  // create subscribers
-  std::string input1_topic = this->get_node_topics_interface()->resolve_topic_name("~/input1");
-  std::string input2_topic = this->get_node_topics_interface()->resolve_topic_name("~/input2");
-  point_cloud_transport::TransportHints transport_hint1(this->shared_from_this(), "raw", "point_cloud_transport1");
-  point_cloud_transport::TransportHints transport_hint2(this->shared_from_this(), "raw", "point_cloud_transport2");
-  cloud_subscriber1_ = std::make_shared<point_cloud_transport::SubscriberFilter>();
-  cloud_subscriber2_ = std::make_shared<point_cloud_transport::SubscriberFilter>();
-  cloud_subscriber1_->subscribe(this->shared_from_this(), input1_topic, transport_hint1.getTransport());
-  cloud_subscriber2_->subscribe(this->shared_from_this(), input2_topic, transport_hint2.getTransport());
+  // validate inputs
+  if (input_topics_.empty()) {
+    RCLCPP_FATAL(this->get_logger(), "No input topics configured (parameter 'input_topics'). Exiting");
+    exit(EXIT_FAILURE);
+  }
+  if (!input_transport_hints_.empty() && input_transport_hints_.size() != input_topics_.size()) {
+    RCLCPP_WARN(this->get_logger(), "'input_transport_hints' length (%zu) does not match 'input_topics' (%zu). Missing hints default to 'raw'",
+                input_transport_hints_.size(), input_topics_.size());
+  }
 
-  // create a synchronizer with approximate time policy
-  cloud_synchronizer_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(SyncPolicy(20), *cloud_subscriber1_, *cloud_subscriber2_); // queue size
-  cloud_synchronizer_->setMaxIntervalDuration(rclcpp::Duration::from_seconds(0.05));                                                           // max interval duration: only pair point clouds if their timestamps differ by ≤ 50 ms.
-  cloud_synchronizer_->registerCallback(std::bind(&PointCloudFusion::pointCloudCallback, this, std::placeholders::_1, std::placeholders::_2));
+  // create subscribers
+  cloud_subscribers_.resize(input_topics_.size());
+  cloud_queues_.assign(input_topics_.size(), {});
+
+  for (size_t i = 0; i < input_topics_.size(); ++i) {
+    const std::string configured = input_topics_[i];
+    const std::string resolved = this->get_node_topics_interface()->resolve_topic_name(configured);
+    const std::string hint = (i < input_transport_hints_.size() && !input_transport_hints_[i].empty()) ? input_transport_hints_[i] : std::string("raw");
+
+    point_cloud_transport::TransportHints transport_hint(this->shared_from_this(), hint, ("point_cloud_transport" + std::to_string(i+1)).c_str());
+    cloud_subscribers_[i] = std::make_shared<point_cloud_transport::SubscriberFilter>();
+    cloud_subscribers_[i]->subscribe(this->shared_from_this(), resolved, transport_hint.getTransport());
+
+    // capture index for callback
+    cloud_subscribers_[i]->registerCallback([this, i](const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg) {
+      this->pointCloudCallback(i, msg);
+    });
+  }
 
   // create publisher
   point_cloud_transport::PointCloudTransport pct(this->shared_from_this());
   std::string output_topic_name = this->get_node_topics_interface()->resolve_topic_name("~/output");
   cloud_publisher_ = std::make_shared<point_cloud_transport::Publisher>(pct.advertise(output_topic_name, 10));
-  RCLCPP_INFO(this->get_logger(), "Subscribed to '%s' and '%s' (synchronized)", cloud_subscriber1_->getTopic().c_str(), cloud_subscriber2_->getTopic().c_str());
+  for (size_t i = 0; i < cloud_subscribers_.size(); ++i) {
+    RCLCPP_INFO(this->get_logger(), "Subscribed to '%s' (hint=%s)", cloud_subscribers_[i]->getTopic().c_str(),
+                (i < input_transport_hints_.size() ? input_transport_hints_[i].c_str() : "raw"));
+  }
   RCLCPP_INFO(this->get_logger(), "Publishing to '%s'", cloud_publisher_->getTopic().c_str());
 }
 
+void PointCloudFusion::pointCloudCallback(size_t idx, const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg) {
+  if (idx >= cloud_queues_.size()) return;
 
-void PointCloudFusion::pointCloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg1,
-                                          const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg2) {
-  RCLCPP_INFO(this->get_logger(), "Received synchronized point clouds - timestamp diff: %.3f ms",
-    std::abs((rclcpp::Time(msg1->header.stamp) - rclcpp::Time(msg2->header.stamp)).seconds() * 1000.0));
+  // push to queue for this input
+  auto &queue = cloud_queues_[idx];
+  queue.push_back(msg);
+  while (queue.size() > max_queue_size_) queue.pop_front();
 
-  // transform sensor_msgs::msg::PointCloud2 msg if required
-  sensor_msgs::msg::PointCloud2::UniquePtr transformed_point_cloud_1 = std::make_unique<sensor_msgs::msg::PointCloud2>();
-  sensor_msgs::msg::PointCloud2::UniquePtr transformed_point_cloud_2 = std::make_unique<sensor_msgs::msg::PointCloud2>();
-  sensor_msgs::msg::PointCloud2::UniquePtr fused_point_cloud = std::make_unique<sensor_msgs::msg::PointCloud2>();
+  // try to find a synchronized set centered on this message's timestamp
+  const rclcpp::Time t_ref(msg->header.stamp);
+  std::vector<sensor_msgs::msg::PointCloud2::ConstSharedPtr> selected(cloud_queues_.size());
+  selected[idx] = msg;
 
-  std::vector<std::pair<const sensor_msgs::msg::PointCloud2::ConstSharedPtr&, sensor_msgs::msg::PointCloud2::UniquePtr&>> point_clouds = {
-    {msg1, transformed_point_cloud_1},
-    {msg2, transformed_point_cloud_2}
-  };
+  for (size_t i = 0; i < cloud_queues_.size(); ++i) {
+    if (i == idx) continue;
+    // find closest msg within window
+    const auto &q = cloud_queues_[i];
+    sensor_msgs::msg::PointCloud2::ConstSharedPtr best;
+    rclcpp::Duration best_dt = rclcpp::Duration::from_seconds(max_time_diff_sec_);
+    for (const auto &m : q) {
+      const rclcpp::Time t_m(m->header.stamp);
+      rclcpp::Duration dt = (t_m > t_ref) ? (t_m - t_ref) : (t_ref - t_m);
+      if (dt <= rclcpp::Duration::from_seconds(max_time_diff_sec_) && dt <= best_dt) {
+        best_dt = dt;
+        best = m;
+      }
+    }
+    if (!best) {
+      // not all inputs have a close enough message yet
+      return;
+    }
+    selected[i] = best;
+  }
 
-  for (auto& [msg, transformed_point_cloud] : point_clouds) {
-    if (msg->header.frame_id != target_frame_) {
+  // Transform and fuse all selected clouds into target frame
+  std::unique_ptr<sensor_msgs::msg::PointCloud2> fused_point_cloud = std::make_unique<sensor_msgs::msg::PointCloud2>();
+  bool first = true;
+  rclcpp::Time latest_stamp(0, 0, get_clock()->get_clock_type());
+
+  for (const auto &pc_msg : selected) {
+    sensor_msgs::msg::PointCloud2 transformed;
+    if (pc_msg->header.frame_id != target_frame_) {
       try {
-        tf_buffer_->transform(*msg, *transformed_point_cloud, target_frame_, tf2::durationFromSec(0.1));
+        tf_buffer_->transform(*pc_msg, transformed, target_frame_, tf2::durationFromSec(0.1));
       } catch (const tf2::TransformException& ex) {
         RCLCPP_ERROR(this->get_logger(),
-          "Cannot transform Pointcloud: Transformation from its frame (%s) to inference_frame (%s) not found: %s",
-          msg->header.frame_id.c_str(), target_frame_.c_str(), ex.what());
+          "Cannot transform Pointcloud: Transformation from its frame (%s) to target_frame (%s) not found: %s",
+          pc_msg->header.frame_id.c_str(), target_frame_.c_str(), ex.what());
         return;
       }
     } else {
-      *transformed_point_cloud = *msg;
+      transformed = *pc_msg;
     }
+
+    if (first) {
+      *fused_point_cloud = transformed;
+      first = false;
+    } else {
+      sensor_msgs::msg::PointCloud2 tmp;
+      // concatenate into fused_point_cloud
+      pcl::concatenatePointCloud(*fused_point_cloud, transformed, tmp);
+      *fused_point_cloud = std::move(tmp);
+    }
+
+    latest_stamp = std::max(latest_stamp, rclcpp::Time(pc_msg->header.stamp));
   }
 
-  // concatenate the two transformed point clouds
-  pcl::concatenatePointCloud(*transformed_point_cloud_1, *transformed_point_cloud_2, *fused_point_cloud);
-  fused_point_cloud->header.stamp =    // apply time stamp of the most recent point cloud
-    (rclcpp::Time(msg1->header.stamp) > rclcpp::Time(msg2->header.stamp))
-      ? msg1->header.stamp : msg2->header.stamp;
+  fused_point_cloud->header.stamp = latest_stamp;
+  fused_point_cloud->header.frame_id = target_frame_;
   cloud_publisher_->publish(std::move(fused_point_cloud));
-  RCLCPP_INFO(this->get_logger(), "Published fused point cloud (synchronized)");
+  RCLCPP_INFO(this->get_logger(), "Published fused point cloud (%zu inputs)", selected.size());
 }
 
 
