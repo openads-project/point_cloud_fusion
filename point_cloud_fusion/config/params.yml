@@ -1,3 +1,37 @@
 /**/*:
   ros__parameters:
-    target_frame: "base_link"
+    target_frame: base_link
+
+    # --- point_cloud_transport parameters -----
+    # point_cloud_transport1: raw # transport hint for subscription 1
+    # point_cloud_transport2: raw # transport hint for subscription 2
+    # point_cloud_fusion.output.enable_pub_plugins:
+    #   - point_cloud_transport/cloudini
+    #   - point_cloud_transport/draco
+    #   - point_cloud_transport/raw
+    #   - point_cloud_transport/zlib
+    #   - point_cloud_transport/zstd
+    # point_cloud_fusion.output.cloudini.clodini_resolution: 0.001
+    # point_cloud_fusion.output.draco.attribute_mapping.attribute_type.x: POSITION
+    # point_cloud_fusion.output.draco.attribute_mapping.attribute_type.y: POSITION
+    # point_cloud_fusion.output.draco.attribute_mapping.attribute_type.z: POSITION
+    # point_cloud_fusion.output.draco.attribute_mapping.quantization_bits.rgb: 16
+    # point_cloud_fusion.output.draco.attribute_mapping.quantization_bits.x: 16
+    # point_cloud_fusion.output.draco.attribute_mapping.quantization_bits.y: 16
+    # point_cloud_fusion.output.draco.attribute_mapping.quantization_bits.z: 16
+    # point_cloud_fusion.output.draco.attribute_mapping.rgba_tweak.rgb: true
+    # point_cloud_fusion.output.draco.attribute_mapping.rgba_tweak.rgba: false
+    # point_cloud_fusion.output.draco.decode_speed: 7
+    # point_cloud_fusion.output.draco.deduplicate: true
+    # point_cloud_fusion.output.draco.encode_method: 0
+    # point_cloud_fusion.output.draco.encode_speed: 7
+    # point_cloud_fusion.output.draco.expert_attribute_types: false
+    # point_cloud_fusion.output.draco.expert_quantization: false
+    # point_cloud_fusion.output.draco.force_quantization: false
+    # point_cloud_fusion.output.draco.quantization_COLOR: 14
+    # point_cloud_fusion.output.draco.quantization_GENERIC: 14
+    # point_cloud_fusion.output.draco.quantization_NORMAL: 14
+    # point_cloud_fusion.output.draco.quantization_POSITION: 14
+    # point_cloud_fusion.output.draco.quantization_TEX_COORD: 14
+    # point_cloud_fusion.output.zlib.encode_level: 7
+    # point_cloud_fusion.output.zstd.zstd_encode_level: 7

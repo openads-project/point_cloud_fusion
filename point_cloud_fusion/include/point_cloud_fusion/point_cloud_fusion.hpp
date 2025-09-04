@@ -10,6 +10,8 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <point_cloud_transport/point_cloud_transport.hpp>
+#include <point_cloud_transport/subscriber_filter.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -17,8 +19,8 @@
 
 namespace point_cloud_fusion {
 
-template <typename C> struct is_vector : std::false_type {};    
-template <typename T,typename A> struct is_vector< std::vector<T,A> > : std::true_type {};    
+template <typename C> struct is_vector : std::false_type {};
+template <typename T,typename A> struct is_vector< std::vector<T,A> > : std::true_type {};
 template <typename C> inline constexpr bool is_vector_v = is_vector<C>::value;
 
 
@@ -63,7 +65,6 @@ class PointCloudFusion : public rclcpp::Node {
                                const std::optional<double> &to_value = std::nullopt,
                                const std::optional<double> &step_value = std::nullopt,
                                const std::string &additional_constraints = "");
-
   /**
    * @brief Sets up subscribers, publishers, etc. to configure the node
    */
@@ -86,13 +87,13 @@ class PointCloudFusion : public rclcpp::Node {
   /**
    * @brief Subscribers
    */
-  std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>> cloud_subscriber1_;
-  std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>> cloud_subscriber2_;
+  std::shared_ptr<point_cloud_transport::SubscriberFilter> cloud_subscriber1_;
+  std::shared_ptr<point_cloud_transport::SubscriberFilter> cloud_subscriber2_;
 
   /**
    * @brief Publisher
    */
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_publisher_;
+  std::shared_ptr<point_cloud_transport::Publisher> cloud_publisher_;
 
   /**
    * @brief Synchronizer for the two point cloud subscribers
@@ -110,6 +111,11 @@ class PointCloudFusion : public rclcpp::Node {
    * @brief Target frame to which all input point clouds are transformed before fusion
    */
   std::string target_frame_ = "base_link";
+
+  /**
+   * @brief Timer to delay setup
+   */
+  rclcpp::TimerBase::SharedPtr setup_timer_;
 };
 
 

@@ -27,7 +27,7 @@ This package provides a node that fuses two input point clouds and publishes the
 
 | Topic | Type | Description |
 | --- | --- | --- |
-| `~/output` | `sensor_msgs::msg::PointCloud2` | Fused point cloud |
+| `~/output` | `sensor_msgs::msg::PointCloud2` | Managed by `point_cloud_transport`, so additional transport-specific output topics are automatically created (e.g., `~/output/compressed`, `~/output/draco`). |
 
 ### Parameters
 
