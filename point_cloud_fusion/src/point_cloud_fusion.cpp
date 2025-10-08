@@ -128,9 +128,10 @@ void PointCloudFusion::setup() {
     const std::string resolved = this->get_node_topics_interface()->resolve_topic_name(configured);
     const std::string hint = (i < input_transport_hints_.size() && !input_transport_hints_[i].empty()) ? input_transport_hints_[i] : std::string("raw");
 
-    point_cloud_transport::TransportHints transport_hint(this->shared_from_this(), hint, ("point_cloud_transport" + std::to_string(i+1)).c_str());
     cloud_subscribers_[i] = std::make_shared<point_cloud_transport::SubscriberFilter>();
-    cloud_subscribers_[i]->subscribe(this->shared_from_this(), resolved, transport_hint.getTransport());
+    cloud_subscribers_[i]->subscribe(this->shared_from_this(), resolved, hint);
+    RCLCPP_INFO(this->get_logger(), "Subscribed to '%s' (hint=%s)",
+                cloud_subscribers_[i]->getTopic().c_str(), hint.c_str());
 
     // capture index for callback
     cloud_subscribers_[i]->registerCallback([this, i](const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg) {
@@ -142,10 +143,6 @@ void PointCloudFusion::setup() {
   point_cloud_transport::PointCloudTransport pct(this->shared_from_this());
   std::string output_topic_name = this->get_node_topics_interface()->resolve_topic_name("~/output");
   cloud_publisher_ = std::make_shared<point_cloud_transport::Publisher>(pct.advertise(output_topic_name, 10));
-  for (size_t i = 0; i < cloud_subscribers_.size(); ++i) {
-    RCLCPP_INFO(this->get_logger(), "Subscribed to '%s' (hint=%s)", cloud_subscribers_[i]->getTopic().c_str(),
-                (i < input_transport_hints_.size() ? input_transport_hints_[i].c_str() : "raw"));
-  }
   RCLCPP_INFO(this->get_logger(), "Publishing to '%s'", cloud_publisher_->getTopic().c_str());
 }
 
