@@ -147,6 +147,7 @@ void PointCloudFusion::setup() {
 }
 
 void PointCloudFusion::pointCloudCallback(size_t idx, const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg) {
+  const auto callback_start = std::chrono::steady_clock::now();
   if (idx >= cloud_queues_.size()) return;
 
   // push to queue for this input
@@ -175,6 +176,9 @@ void PointCloudFusion::pointCloudCallback(size_t idx, const sensor_msgs::msg::Po
     }
     if (!best) {
       // not all inputs have a close enough message yet
+      RCLCPP_WARN(this->get_logger(),
+        "Input %zu: No point cloud found within %.3f s of reference time %.3f (queue size %zu)",
+        i, max_time_diff_sec_, t_ref.seconds(), q.size());
       return;
     }
     selected[i] = best;
@@ -183,6 +187,7 @@ void PointCloudFusion::pointCloudCallback(size_t idx, const sensor_msgs::msg::Po
   // Transform and fuse all selected clouds into target frame
   std::unique_ptr<sensor_msgs::msg::PointCloud2> fused_point_cloud = std::make_unique<sensor_msgs::msg::PointCloud2>();
   bool first = true;
+  rclcpp::Time earliest_stamp(0, 0, get_clock()->get_clock_type());
   rclcpp::Time latest_stamp(0, 0, get_clock()->get_clock_type());
 
   for (const auto &pc_msg : selected) {
@@ -200,23 +205,31 @@ void PointCloudFusion::pointCloudCallback(size_t idx, const sensor_msgs::msg::Po
       transformed = *pc_msg;
     }
 
+    const rclcpp::Time current_stamp(pc_msg->header.stamp);
     if (first) {
       *fused_point_cloud = transformed;
+      earliest_stamp = current_stamp;
+      latest_stamp = current_stamp;
       first = false;
     } else {
       sensor_msgs::msg::PointCloud2 tmp;
       // concatenate into fused_point_cloud
       pcl::concatenatePointCloud(*fused_point_cloud, transformed, tmp);
       *fused_point_cloud = std::move(tmp);
+      if (current_stamp < earliest_stamp) earliest_stamp = current_stamp;
+      if (current_stamp > latest_stamp) latest_stamp = current_stamp;
     }
 
-    latest_stamp = std::max(latest_stamp, rclcpp::Time(pc_msg->header.stamp));
   }
 
   fused_point_cloud->header.stamp = latest_stamp;
   fused_point_cloud->header.frame_id = target_frame_;
   cloud_publisher_->publish(std::move(fused_point_cloud));
-  RCLCPP_INFO(this->get_logger(), "Published fused point cloud (%zu inputs)", selected.size());
+  const double batch_dt_sec = (latest_stamp - earliest_stamp).seconds();
+  const double fusion_duration_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - callback_start).count();
+  RCLCPP_INFO(this->get_logger(),
+              "Published fused point cloud (%zu inputs), batch_dt=%.6f s, fusion_duration=%.3f ms",
+              selected.size(), batch_dt_sec, fusion_duration_ms);
 }
 
 
