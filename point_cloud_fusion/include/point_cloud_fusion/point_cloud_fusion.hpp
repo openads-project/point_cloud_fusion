@@ -3,8 +3,11 @@
 #include <memory>
 #include <string>
 #include <vector>
+
 #include <deque>
 
+#include <message_filters/sync_policies/approximate_time.h>
+#include <message_filters/synchronizer.h>
 #include <message_filters/subscriber.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -70,12 +73,15 @@ class PointCloudFusion : public rclcpp::Node {
   void setup();
 
   /**
-   * @brief Process a new input point cloud from index
+   * @brief Process synchronized point clouds
    *
-   * @param idx input index
-   * @param msg message
-   */
-  void pointCloudCallback(size_t idx, const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg);
+   * @param msgs batch of synchronized point clouds
+  */
+  bool handleSynchronizedPointClouds(const std::vector<sensor_msgs::msg::PointCloud2::ConstSharedPtr> &msgs);
+
+  template <std::size_t N>
+  void setupSynchronizer();
+  void manualPointCloudCallback(size_t idx, const sensor_msgs::msg::PointCloud2::ConstSharedPtr &msg);
 
  private:
 
@@ -84,11 +90,18 @@ class PointCloudFusion : public rclcpp::Node {
    */
   std::vector<std::tuple<std::string, std::function<void(const rclcpp::Parameter &)>>> auto_reconfigurable_params_;
 
-  /**
-   * @brief Subscribers (N inputs)
-   */
+  using PointCloudMsg = sensor_msgs::msg::PointCloud2;
   std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>> cloud_subscribers_;
-  std::vector<std::deque<sensor_msgs::msg::PointCloud2::ConstSharedPtr>> cloud_queues_;
+  std::shared_ptr<void> synchronizer_;
+  bool manual_sync_active_ = false;
+  struct CloudQueueItem {
+    PointCloudMsg::ConstSharedPtr msg;
+    rclcpp::Time stamp;
+    CloudQueueItem() = default;
+    CloudQueueItem(PointCloudMsg::ConstSharedPtr cloud_msg, const rclcpp::Time &cloud_stamp)
+      : msg(std::move(cloud_msg)), stamp(cloud_stamp) {}
+  };
+  std::vector<std::deque<CloudQueueItem>> cloud_queues_;
   std::vector<rclcpp::Time> last_fused_stamps_;
 
   /**
@@ -100,7 +113,8 @@ class PointCloudFusion : public rclcpp::Node {
    * @brief Synchronization parameters
    */
   double max_time_diff_sec_ = 0.05; // 50 ms default window
-  size_t max_queue_size_ = 20;      // per-input queue size
+  size_t sync_queue_size_ = 20;     // queue size for synchronizer
+  size_t max_queue_size_ = 20;      // per-input queue size for manual sync
 
   /**
    * @brief TF2 buffer and transform listener
