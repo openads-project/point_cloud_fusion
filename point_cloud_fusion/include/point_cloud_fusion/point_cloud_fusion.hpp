@@ -89,6 +89,7 @@ class PointCloudFusion : public rclcpp::Node {
    */
   std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>> cloud_subscribers_;
   std::vector<std::deque<sensor_msgs::msg::PointCloud2::ConstSharedPtr>> cloud_queues_;
+  std::vector<rclcpp::Time> last_fused_stamps_;
 
   /**
    * @brief Publisher

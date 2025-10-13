@@ -122,6 +122,9 @@ void PointCloudFusion::setup() {
   // create subscribers
   cloud_subscribers_.resize(input_topics_.size());
   cloud_queues_.assign(input_topics_.size(), {});
+  const auto clock_type = this->get_clock()->get_clock_type();
+  const rclcpp::Time initial_stamp = rclcpp::Time(0, 0, clock_type) - rclcpp::Duration(1, 0);
+  last_fused_stamps_.assign(input_topics_.size(), initial_stamp);
 
   for (size_t i = 0; i < input_topics_.size(); ++i) {
     const std::string configured = input_topics_[i];
@@ -148,12 +151,32 @@ void PointCloudFusion::setup() {
 
 void PointCloudFusion::pointCloudCallback(size_t idx, const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg) {
   const auto callback_start = std::chrono::steady_clock::now();
-  if (idx >= cloud_queues_.size()) return;
+  if (idx >= cloud_queues_.size() || idx >= last_fused_stamps_.size()) return;
+
+  auto prune_queue = [this](size_t queue_idx) {
+    auto &queue_ref = cloud_queues_[queue_idx];
+    while (!queue_ref.empty()) {
+      const rclcpp::Time stamp(queue_ref.front()->header.stamp);
+      if (stamp <= last_fused_stamps_[queue_idx]) {
+        queue_ref.pop_front();
+      } else {
+        break;
+      }
+    }
+  };
 
   // push to queue for this input
   auto &queue = cloud_queues_[idx];
   queue.push_back(msg);
+  prune_queue(idx);
   while (queue.size() > max_queue_size_) queue.pop_front();
+  if (!queue.empty()) {
+    const rclcpp::Time newest_stamp(queue.back()->header.stamp);
+    if (newest_stamp <= last_fused_stamps_[idx]) {
+      queue.pop_back();
+      return;
+    }
+  }
 
   // try to find a synchronized set centered on this message's timestamp
   const rclcpp::Time t_ref(msg->header.stamp);
@@ -182,6 +205,18 @@ void PointCloudFusion::pointCloudCallback(size_t idx, const sensor_msgs::msg::Po
       return;
     }
     selected[i] = best;
+  }
+
+  for (size_t i = 0; i < selected.size(); ++i) {
+    if (!selected[i]) return;
+    const rclcpp::Time stamp(selected[i]->header.stamp);
+    if (stamp <= last_fused_stamps_[i]) {
+      prune_queue(i);
+      RCLCPP_DEBUG(this->get_logger(),
+                   "Skipping fusion because input %zu has stale data (stamp %.9f <= last fused %.9f)",
+                   i, stamp.seconds(), last_fused_stamps_[i].seconds());
+      return;
+    }
   }
 
   // Transform and fuse all selected clouds into target frame
@@ -225,6 +260,10 @@ void PointCloudFusion::pointCloudCallback(size_t idx, const sensor_msgs::msg::Po
   fused_point_cloud->header.stamp = latest_stamp;
   fused_point_cloud->header.frame_id = target_frame_;
   cloud_publisher_->publish(std::move(fused_point_cloud));
+  for (size_t i = 0; i < selected.size(); ++i) {
+    last_fused_stamps_[i] = rclcpp::Time(selected[i]->header.stamp);
+    prune_queue(i);
+  }
   const double batch_dt_sec = (latest_stamp - earliest_stamp).seconds();
   const double fusion_duration_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - callback_start).count();
   RCLCPP_INFO(this->get_logger(),
