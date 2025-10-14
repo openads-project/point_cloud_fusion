@@ -8,7 +8,6 @@
 
 #include <point_cloud_fusion/point_cloud_fusion.hpp>
 
-#include <pcl/common/io.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <tf2/time.h>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
@@ -326,44 +325,45 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
 
   const auto transform_start = std::chrono::steady_clock::now();
 
-  std::vector<std::future<pcl::PCLPointCloud2>> futures;
+  std::vector<std::future<sensor_msgs::msg::PointCloud2>> futures;
   futures.reserve(msgs.size());
   for (size_t i = 0; i < msgs.size(); ++i) {
     const auto transform = static_transforms_[i];
     const bool is_identity = identity_transforms_[i];
     const auto msg = msgs[i];
     futures.emplace_back(std::async(std::launch::async, [msg, transform, is_identity]() {
-      pcl::PCLPointCloud2 pcl_cloud;
+      sensor_msgs::msg::PointCloud2 transformed_msg;
       if (is_identity) {
-        pcl_conversions::toPCL(*msg, pcl_cloud);
+        transformed_msg = *msg;
       } else {
-        sensor_msgs::msg::PointCloud2 transformed_msg;
         tf2::doTransform(*msg, transformed_msg, transform);
-        pcl_conversions::toPCL(transformed_msg, pcl_cloud);
       }
-      return pcl_cloud;
+      return transformed_msg;
     }));
   }
 
-  std::vector<pcl::PCLPointCloud2> transformed_clouds;
+  std::vector<sensor_msgs::msg::PointCloud2> transformed_clouds;
   transformed_clouds.reserve(futures.size());
   for (auto &future : futures) {
     transformed_clouds.emplace_back(future.get());
   }
 
-  pcl::PCLPointCloud2 fused_pcl = transformed_clouds.front();
+  sensor_msgs::msg::PointCloud2 fused_msg = transformed_clouds.front();
   for (size_t i = 1; i < transformed_clouds.size(); ++i) {
-    pcl::PCLPointCloud2 tmp;
-    pcl::concatenate(fused_pcl, transformed_clouds[i], tmp);
-    fused_pcl = std::move(tmp);
+    sensor_msgs::msg::PointCloud2 tmp;
+    pcl::concatenatePointCloud(fused_msg, transformed_clouds[i], tmp);
+    fused_msg = std::move(tmp);
   }
 
-  const size_t fused_points = static_cast<size_t>(fused_pcl.width) * fused_pcl.height;
+  size_t fused_points = static_cast<size_t>(fused_msg.width) * fused_msg.height;
+  if (fused_points == 0 && fused_msg.point_step > 0) {
+    fused_points = fused_msg.data.size() / fused_msg.point_step;
+  }
 
-  auto fused_point_cloud = std::make_unique<PointCloudMsg>();
-  pcl_conversions::moveFromPCL(fused_pcl, *fused_point_cloud);
-  fused_point_cloud->header.frame_id = target_frame_;
-  fused_point_cloud->header.stamp = latest_stamp;
+  fused_msg.header.frame_id = target_frame_;
+  fused_msg.header.stamp = latest_stamp;
+
+  auto fused_point_cloud = std::make_unique<PointCloudMsg>(std::move(fused_msg));
 
   const auto processing_end = std::chrono::steady_clock::now();
   cloud_publisher_->publish(std::move(fused_point_cloud));
