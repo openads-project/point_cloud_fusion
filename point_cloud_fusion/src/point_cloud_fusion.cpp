@@ -1,14 +1,12 @@
 #include <chrono>
 #include <cmath>
 #include <functional>
-#include <future>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
 #include <point_cloud_fusion/point_cloud_fusion.hpp>
 
-#include <pcl_conversions/pcl_conversions.h>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <tf2/time.h>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
@@ -230,49 +228,6 @@ void PointCloudFusion::setup() {
   RCLCPP_INFO(this->get_logger(), "Publishing to '%s'", cloud_publisher_->getTopic().c_str());
 }
 
-sensor_msgs::msg::PointCloud2 PointCloudFusion::filterInvalidPoints(const sensor_msgs::msg::PointCloud2 &input) const {
-  sensor_msgs::msg::PointCloud2 output;
-  output.header = input.header;
-  output.fields = input.fields;
-  output.is_bigendian = input.is_bigendian;
-  output.point_step = input.point_step;
-  output.is_dense = input.is_dense;
-  output.height = 1;
-  output.width = 0;
-
-  const size_t total_points = (input.point_step > 0)
-    ? (input.data.size() / input.point_step)
-    : 0;
-
-  output.data.reserve(input.data.size());
-
-  sensor_msgs::PointCloud2ConstIterator<float> iter_x(input, "x");
-  sensor_msgs::PointCloud2ConstIterator<float> iter_y(input, "y");
-  sensor_msgs::PointCloud2ConstIterator<float> iter_z(input, "z");
-
-  for (size_t i = 0; i < total_points; ++i, ++iter_x, ++iter_y, ++iter_z) {
-    const float x = *iter_x;
-    const float y = *iter_y;
-    const float z = *iter_z;
-    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
-      output.is_dense = false;
-      continue;
-    }
-
-    const auto start_it = input.data.begin() + static_cast<std::ptrdiff_t>(i * input.point_step);
-    output.data.insert(output.data.end(), start_it, start_it + input.point_step);
-    ++output.width;
-  }
-
-  output.row_step = output.width * output.point_step;
-  if (output.width == 0) {
-    output.data.clear();
-    output.row_step = 0;
-  }
-
-  return output;
-}
-
 template <std::size_t N>
 void PointCloudFusion::setupSynchronizer() {
   static_assert(N >= 2 && N <= 9, "Supported synchronizer size is between 2 and 9");
@@ -369,31 +324,65 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
 
   const auto transform_start = std::chrono::steady_clock::now();
 
-  std::vector<std::future<sensor_msgs::msg::PointCloud2>> futures;
-  futures.reserve(msgs.size());
+  sensor_msgs::msg::PointCloud2 fused_msg;
+  fused_msg.header.frame_id = target_frame_;
+  fused_msg.height = 1;
+  fused_msg.width = 0;
+  fused_msg.is_dense = true;
+  fused_msg.point_step = 0;
+
+  size_t total_valid_points = 0;
+
   for (size_t i = 0; i < msgs.size(); ++i) {
     const auto transform = static_transforms_[i];
     const bool is_identity = identity_transforms_[i];
-    const auto msg = msgs[i];
-    futures.emplace_back(std::async(std::launch::async, [this, msg, transform, is_identity]() {
-      sensor_msgs::msg::PointCloud2 transformed_msg;
-      if (is_identity) {
-        transformed_msg = *msg;
-      } else {
-        tf2::doTransform(*msg, transformed_msg, transform);
-      }
-      return this->filterInvalidPoints(transformed_msg);
-    }));
-  }
+    const auto &msg = msgs[i];
 
-  std::vector<sensor_msgs::msg::PointCloud2> transformed_clouds;
-  transformed_clouds.reserve(futures.size());
-  size_t total_valid_points = 0;
-  for (auto &future : futures) {
-    transformed_clouds.emplace_back(future.get());
-    const auto &cloud = transformed_clouds.back();
-    if (cloud.point_step > 0) {
-      total_valid_points += cloud.data.size() / cloud.point_step;
+    sensor_msgs::msg::PointCloud2 transformed_msg;
+    const sensor_msgs::msg::PointCloud2 *cloud_ptr = nullptr;
+    if (is_identity) {
+      cloud_ptr = msg.get();
+    } else {
+      tf2::doTransform(*msg, transformed_msg, transform);
+      cloud_ptr = &transformed_msg;
+    }
+
+    const auto &cloud = *cloud_ptr;
+    if (cloud.point_step == 0 || cloud.data.empty()) {
+      continue;
+    }
+
+    if (fused_msg.point_step == 0) {
+      fused_msg.fields = cloud.fields;
+      fused_msg.is_bigendian = cloud.is_bigendian;
+      fused_msg.point_step = cloud.point_step;
+    } else if (fused_msg.point_step != cloud.point_step) {
+      RCLCPP_WARN(this->get_logger(),
+                  "Skipping cloud with differing point_step (%u vs %u)",
+                  cloud.point_step, fused_msg.point_step);
+      continue;
+    }
+
+    const size_t num_points = cloud.data.size() / cloud.point_step;
+    fused_msg.data.reserve(fused_msg.data.size() + cloud.data.size());
+
+    sensor_msgs::PointCloud2ConstIterator<float> iter_x(cloud, "x");
+    sensor_msgs::PointCloud2ConstIterator<float> iter_y(cloud, "y");
+    sensor_msgs::PointCloud2ConstIterator<float> iter_z(cloud, "z");
+
+    const uint8_t *raw = cloud.data.data();
+    for (size_t idx = 0; idx < num_points; ++idx, ++iter_x, ++iter_y, ++iter_z) {
+      const float x = *iter_x;
+      const float y = *iter_y;
+      const float z = *iter_z;
+      if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+        fused_msg.is_dense = false;
+        continue;
+      }
+
+      const auto start = raw + idx * cloud.point_step;
+      fused_msg.data.insert(fused_msg.data.end(), start, start + cloud.point_step);
+      ++total_valid_points;
     }
   }
 
@@ -403,19 +392,8 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
     return;
   }
 
-  sensor_msgs::msg::PointCloud2 fused_msg = transformed_clouds.front();
-  for (size_t i = 1; i < transformed_clouds.size(); ++i) {
-    sensor_msgs::msg::PointCloud2 tmp;
-    pcl::concatenatePointCloud(fused_msg, transformed_clouds[i], tmp);
-    fused_msg = std::move(tmp);
-  }
-
-  size_t fused_points = static_cast<size_t>(fused_msg.width) * fused_msg.height;
-  if (fused_points == 0 && fused_msg.point_step > 0) {
-    fused_points = fused_msg.data.size() / fused_msg.point_step;
-  }
-
-  fused_msg.header.frame_id = target_frame_;
+  fused_msg.width = static_cast<uint32_t>(total_valid_points);
+  fused_msg.row_step = fused_msg.point_step * fused_msg.width;
   fused_msg.header.stamp = latest_stamp;
 
   auto fused_point_cloud = std::make_unique<PointCloudMsg>(std::move(fused_msg));
@@ -432,7 +410,7 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
   RCLCPP_INFO(this->get_logger(),
               "Published fused point cloud (%zu inputs, %zu pts), batch_dt=%.6f s, max_dt=%.6f s, fusion_duration=%.3f ms "
               "(transform=%.3f ms, publish=%.3f ms)",
-              msgs.size(), fused_points, batch_dt_sec, max_dt_sec, fusion_duration_ms,
+              msgs.size(), total_valid_points, batch_dt_sec, max_dt_sec, fusion_duration_ms,
               transform_duration_ms, publish_duration_ms);
 }
 
