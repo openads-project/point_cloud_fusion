@@ -365,26 +365,48 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
     }
 
     const size_t num_points = cloud.data.size() / cloud.point_step;
-    fused_msg.data.reserve(fused_msg.data.size() + cloud.data.size());
 
     sensor_msgs::PointCloud2ConstIterator<float> iter_x(cloud, "x");
     sensor_msgs::PointCloud2ConstIterator<float> iter_y(cloud, "y");
     sensor_msgs::PointCloud2ConstIterator<float> iter_z(cloud, "z");
 
-    const uint8_t *raw = cloud.data.data();
+    size_t valid_in_cloud = 0;
     for (size_t idx = 0; idx < num_points; ++idx, ++iter_x, ++iter_y, ++iter_z) {
       const float x = *iter_x;
       const float y = *iter_y;
       const float z = *iter_z;
-      if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+      if (std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
+        ++valid_in_cloud;
+      } else {
         fused_msg.is_dense = false;
+      }
+    }
+
+    if (valid_in_cloud == 0) {
+      continue;
+    }
+
+    fused_msg.data.reserve(fused_msg.data.size() + valid_in_cloud * cloud.point_step);
+    const size_t offset = fused_msg.data.size();
+    fused_msg.data.resize(offset + valid_in_cloud * cloud.point_step);
+    uint8_t *dest = fused_msg.data.data() + offset;
+
+    sensor_msgs::PointCloud2ConstIterator<float> copy_x(cloud, "x");
+    sensor_msgs::PointCloud2ConstIterator<float> copy_y(cloud, "y");
+    sensor_msgs::PointCloud2ConstIterator<float> copy_z(cloud, "z");
+    const uint8_t *raw = cloud.data.data();
+
+    for (size_t idx = 0; idx < num_points; ++idx, ++copy_x, ++copy_y, ++copy_z) {
+      const float x = *copy_x;
+      const float y = *copy_y;
+      const float z = *copy_z;
+      if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
         continue;
       }
 
       const auto start = raw + idx * cloud.point_step;
-      const size_t offset = fused_msg.data.size();
-      fused_msg.data.resize(offset + cloud.point_step);
-      std::memcpy(&fused_msg.data[offset], start, cloud.point_step);
+      std::memcpy(dest, start, cloud.point_step);
+      dest += cloud.point_step;
       ++total_valid_points;
     }
   }
