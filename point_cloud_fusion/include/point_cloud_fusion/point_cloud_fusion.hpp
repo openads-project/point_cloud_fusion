@@ -4,8 +4,6 @@
 #include <string>
 #include <vector>
 
-#include <deque>
-
 #include <message_filters/sync_policies/approximate_time.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/subscriber.h>
@@ -15,6 +13,7 @@
 #include <point_cloud_transport/point_cloud_transport.hpp>
 #include <point_cloud_transport/subscriber_filter.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
@@ -77,11 +76,10 @@ class PointCloudFusion : public rclcpp::Node {
    *
    * @param msgs batch of synchronized point clouds
   */
-  bool handleSynchronizedPointClouds(const std::vector<sensor_msgs::msg::PointCloud2::ConstSharedPtr> &msgs);
+  void handleSynchronizedPointClouds(const std::vector<sensor_msgs::msg::PointCloud2::ConstSharedPtr> &msgs);
 
   template <std::size_t N>
   void setupSynchronizer();
-  void manualPointCloudCallback(size_t idx, const sensor_msgs::msg::PointCloud2::ConstSharedPtr &msg);
 
  private:
 
@@ -93,16 +91,10 @@ class PointCloudFusion : public rclcpp::Node {
   using PointCloudMsg = sensor_msgs::msg::PointCloud2;
   std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>> cloud_subscribers_;
   std::shared_ptr<void> synchronizer_;
-  bool manual_sync_active_ = false;
-  struct CloudQueueItem {
-    PointCloudMsg::ConstSharedPtr msg;
-    rclcpp::Time stamp;
-    CloudQueueItem() = default;
-    CloudQueueItem(PointCloudMsg::ConstSharedPtr cloud_msg, const rclcpp::Time &cloud_stamp)
-      : msg(std::move(cloud_msg)), stamp(cloud_stamp) {}
-  };
-  std::vector<std::deque<CloudQueueItem>> cloud_queues_;
-  std::vector<rclcpp::Time> last_fused_stamps_;
+  std::vector<geometry_msgs::msg::TransformStamped> static_transforms_;
+  std::vector<bool> transform_ready_;
+  std::vector<bool> identity_transforms_;
+  std::vector<std::string> source_frames_;
 
   /**
    * @brief Publisher
@@ -114,7 +106,6 @@ class PointCloudFusion : public rclcpp::Node {
    */
   double max_time_diff_sec_ = 0.05; // 50 ms default window
   size_t sync_queue_size_ = 20;     // queue size for synchronizer
-  size_t max_queue_size_ = 20;      // per-input queue size for manual sync
 
   /**
    * @brief TF2 buffer and transform listener

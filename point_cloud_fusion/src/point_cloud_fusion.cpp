@@ -1,15 +1,17 @@
-#include <algorithm>
 #include <chrono>
-#include <cstdint>
 #include <cmath>
 #include <functional>
-#include <iterator>
-#include <limits>
+#include <future>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
 #include <point_cloud_fusion/point_cloud_fusion.hpp>
+
+#include <pcl/common/io.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <tf2/time.h>
+#include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
 #include <rclcpp_components/register_node_macro.hpp>
 RCLCPP_COMPONENTS_REGISTER_NODE(point_cloud_fusion::PointCloudFusion)
@@ -159,9 +161,9 @@ void PointCloudFusion::setup() {
     RCLCPP_FATAL(this->get_logger(), "No input topics configured (parameter 'input_topics'). Exiting");
     exit(EXIT_FAILURE);
   }
-  if (input_topics_.size() > 10) {
+  if (input_topics_.size() > 9) {
     RCLCPP_FATAL(this->get_logger(),
-                 "Configured with %zu input topics, but only up to 10 inputs are supported",
+                 "Configured with %zu input topics, but only up to 9 inputs are supported",
                  input_topics_.size());
     exit(EXIT_FAILURE);
   }
@@ -185,10 +187,12 @@ void PointCloudFusion::setup() {
     cloud_subscribers_.push_back(std::move(subscriber));
   }
 
-  manual_sync_active_ = false;
+  static_transforms_.assign(input_topics_.size(), geometry_msgs::msg::TransformStamped{});
+  transform_ready_.assign(input_topics_.size(), false);
+  identity_transforms_.assign(input_topics_.size(), false);
+  source_frames_.assign(input_topics_.size(), "");
+
   synchronizer_.reset();
-  cloud_queues_.clear();
-  last_fused_stamps_.clear();
 
   // configure synchronization or direct passthrough
   if (cloud_subscribers_.size() == 1) {
@@ -197,7 +201,7 @@ void PointCloudFusion::setup() {
         std::vector<PointCloudMsg::ConstSharedPtr> batch;
         batch.reserve(1);
         batch.emplace_back(msg);
-        (void)this->handleSynchronizedPointClouds(batch);
+        this->handleSynchronizedPointClouds(batch);
       });
     RCLCPP_INFO(this->get_logger(),
                 "Configured single-input mode for topic '%s'",
@@ -217,24 +221,6 @@ void PointCloudFusion::setup() {
                      "Unsupported number of input topics: %zu", cloud_subscribers_.size());
         exit(EXIT_FAILURE);
     }
-  } else {
-    manual_sync_active_ = true;
-    const auto clock_type = this->get_clock()->get_clock_type();
-    const rclcpp::Time initial_stamp = rclcpp::Time(0, 0, clock_type) - rclcpp::Duration(1, 0);
-    cloud_queues_.assign(cloud_subscribers_.size(), {});
-    last_fused_stamps_.assign(cloud_subscribers_.size(), initial_stamp);
-
-    for (size_t i = 0; i < cloud_subscribers_.size(); ++i) {
-      cloud_subscribers_[i]->registerCallback(
-        [this, i](const PointCloudMsg::ConstSharedPtr msg) {
-          this->manualPointCloudCallback(i, msg);
-        });
-    }
-
-    RCLCPP_WARN(this->get_logger(),
-                "Configured manual synchronization for %zu inputs (queue=%zu, max_dt=%.3f s) "
-                "because message_filters::ApproximateTime supports at most 9 inputs",
-                cloud_subscribers_.size(), max_queue_size_, max_time_diff_sec_);
   }
 
   // create publisher
@@ -267,7 +253,7 @@ void PointCloudFusion::setupSynchronizer() {
     };
     (append(std::forward<decltype(msgs)>(msgs)), ...);
     if (!batch.empty()) {
-      (void)this->handleSynchronizedPointClouds(batch);
+      this->handleSynchronizedPointClouds(batch);
     } else {
       RCLCPP_WARN(this->get_logger(),
                   "ApproximateTime synchronizer yielded no valid point clouds; skipping fusion.");
@@ -281,167 +267,53 @@ void PointCloudFusion::setupSynchronizer() {
               static_cast<size_t>(N), sync_queue_size_, max_time_diff_sec_);
 }
 
-void PointCloudFusion::manualPointCloudCallback(size_t idx, const sensor_msgs::msg::PointCloud2::ConstSharedPtr &msg) {
-  if (!manual_sync_active_) {
-    return;
-  }
-  if (idx >= cloud_queues_.size()) {
-    return;
-  }
-
-  auto prune_queue = [this](size_t queue_idx) {
-    auto &queue_ref = cloud_queues_[queue_idx];
-    while (!queue_ref.empty() && queue_ref.front().stamp <= last_fused_stamps_[queue_idx]) {
-      queue_ref.pop_front();
-    }
-  };
-
-  auto &queue = cloud_queues_[idx];
-  const rclcpp::Time msg_stamp(msg->header.stamp);
-  queue.emplace_back(msg, msg_stamp);
-  prune_queue(idx);
-  while (queue.size() > max_queue_size_) {
-    queue.pop_front();
-  }
-  if (queue.empty()) {
-    return;
-  }
-
-  const CloudQueueItem *current_item = &queue.back();
-  if (current_item->stamp <= last_fused_stamps_[idx]) {
-    queue.pop_back();
-    return;
-  }
-
-  const rclcpp::Time t_ref = current_item->stamp;
-  const int64_t t_ref_ns = t_ref.nanoseconds();
-  const int64_t max_dt_ns = std::max<int64_t>(
-    rclcpp::Duration::from_seconds(max_time_diff_sec_).nanoseconds(), 0);
-  std::vector<const CloudQueueItem *> selected(cloud_queues_.size(), nullptr);
-  selected[idx] = current_item;
-
-  for (size_t i = 0; i < cloud_queues_.size(); ++i) {
-    if (i == idx) {
-      continue;
-    }
-    const auto &q = cloud_queues_[i];
-    if (q.empty()) {
-      RCLCPP_WARN(this->get_logger(),
-                  "Input %zu: No point cloud available for synchronization (queue empty)", i);
-      return;
-    }
-    const CloudQueueItem *best = nullptr;
-    int64_t best_dt_ns = std::numeric_limits<int64_t>::max();
-
-    const auto lower = std::lower_bound(
-      q.begin(), q.end(), t_ref,
-      [](const CloudQueueItem &item, const rclcpp::Time &stamp) {
-        return item.stamp < stamp;
-      });
-
-    auto consider_candidate =
-      [&](typename std::deque<CloudQueueItem>::const_iterator it) {
-        if (it == q.end()) {
-          return;
-        }
-        const auto &candidate = *it;
-        const int64_t dt_ns = candidate.stamp.nanoseconds() - t_ref_ns;
-        const int64_t abs_dt_ns = dt_ns >= 0 ? dt_ns : -dt_ns;
-        if (abs_dt_ns <= max_dt_ns && abs_dt_ns < best_dt_ns) {
-          best_dt_ns = abs_dt_ns;
-          best = &candidate;
-        }
-      };
-
-    consider_candidate(lower);
-    if (lower != q.begin()) {
-      consider_candidate(std::prev(lower));
-    }
-
-    if (!best) {
-      RCLCPP_WARN(this->get_logger(),
-                  "Input %zu: No point cloud found within %.3f s of reference time %.3f (queue size %zu)",
-                  i, max_time_diff_sec_, t_ref.seconds(), q.size());
-      return;
-    }
-    selected[i] = best;
-  }
-
-  for (size_t i = 0; i < selected.size(); ++i) {
-    const auto *item = selected[i];
-    if (!item) {
-      return;
-    }
-    if (item->stamp <= last_fused_stamps_[i]) {
-      prune_queue(i);
-      RCLCPP_DEBUG(this->get_logger(),
-                   "Manual sync skipping fusion: input %zu has stale data (stamp %.9f <= last fused %.9f)",
-                   i, item->stamp.seconds(), last_fused_stamps_[i].seconds());
-      return;
-    }
-  }
-
-  std::vector<PointCloudMsg::ConstSharedPtr> batch;
-  batch.reserve(selected.size());
-  for (const auto *item : selected) {
-    batch.emplace_back(item->msg);
-  }
-
-  if (!handleSynchronizedPointClouds(batch)) {
-    return;
-  }
-
-  for (size_t i = 0; i < selected.size(); ++i) {
-    last_fused_stamps_[i] = selected[i]->stamp;
-    prune_queue(i);
-  }
-}
-
-bool PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_msgs::msg::PointCloud2::ConstSharedPtr> &msgs) {
+void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_msgs::msg::PointCloud2::ConstSharedPtr> &msgs) {
   if (msgs.empty()) {
-    return false;
+    return;
   }
 
   const auto callback_start = std::chrono::steady_clock::now();
-
-  std::unique_ptr<PointCloudMsg> fused_point_cloud = std::make_unique<PointCloudMsg>();
-  bool first = true;
   const auto clock_type = this->get_clock()->get_clock_type();
+
+  const auto reference_stamp = rclcpp::Time(msgs.front()->header.stamp);
   rclcpp::Time earliest_stamp(0, 0, clock_type);
   rclcpp::Time latest_stamp(0, 0, clock_type);
-  const rclcpp::Time reference_stamp(msgs.front()->header.stamp);
+  bool first_stamp = true;
   double max_dt_sec = 0.0;
 
-  for (const auto &pc_msg : msgs) {
+  for (size_t i = 0; i < msgs.size(); ++i) {
+    const auto &pc_msg = msgs[i];
     if (!pc_msg) {
       RCLCPP_WARN(this->get_logger(), "Received null point cloud pointer in synchronized batch, skipping fusion");
-      return false;
+      return;
     }
 
-    sensor_msgs::msg::PointCloud2 transformed;
-    if (pc_msg->header.frame_id != target_frame_) {
+    if (!transform_ready_[i] || source_frames_[i] != pc_msg->header.frame_id) {
       try {
-        tf_buffer_->transform(*pc_msg, transformed, target_frame_, tf2::durationFromSec(0.1));
+        if (pc_msg->header.frame_id == target_frame_) {
+          identity_transforms_[i] = true;
+          static_transforms_[i] = geometry_msgs::msg::TransformStamped{};
+        } else {
+          static_transforms_[i] = tf_buffer_->lookupTransform(
+            target_frame_, pc_msg->header.frame_id, tf2::TimePointZero);
+          identity_transforms_[i] = false;
+        }
+        transform_ready_[i] = true;
+        source_frames_[i] = pc_msg->header.frame_id;
       } catch (const tf2::TransformException& ex) {
         RCLCPP_ERROR(this->get_logger(),
-          "Cannot transform Pointcloud: Transformation from its frame (%s) to target_frame (%s) not found: %s",
-          pc_msg->header.frame_id.c_str(), target_frame_.c_str(), ex.what());
-        return false;
+                     "Cannot transform Pointcloud: Transformation from its frame (%s) to target_frame (%s) not found: %s",
+                     pc_msg->header.frame_id.c_str(), target_frame_.c_str(), ex.what());
+        return;
       }
-    } else {
-      transformed = *pc_msg;
     }
 
     const rclcpp::Time current_stamp(pc_msg->header.stamp);
-    if (first) {
-      *fused_point_cloud = std::move(transformed);
+    if (first_stamp) {
       earliest_stamp = current_stamp;
       latest_stamp = current_stamp;
-      first = false;
+      first_stamp = false;
     } else {
-      sensor_msgs::msg::PointCloud2 tmp;
-      pcl::concatenatePointCloud(*fused_point_cloud, transformed, tmp);
-      *fused_point_cloud = std::move(tmp);
       if (current_stamp < earliest_stamp) earliest_stamp = current_stamp;
       if (current_stamp > latest_stamp) latest_stamp = current_stamp;
     }
@@ -452,26 +324,61 @@ bool PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
     }
   }
 
-  fused_point_cloud->header.stamp = latest_stamp;
+  const auto transform_start = std::chrono::steady_clock::now();
+
+  std::vector<std::future<pcl::PCLPointCloud2>> futures;
+  futures.reserve(msgs.size());
+  for (size_t i = 0; i < msgs.size(); ++i) {
+    const auto transform = static_transforms_[i];
+    const bool is_identity = identity_transforms_[i];
+    const auto msg = msgs[i];
+    futures.emplace_back(std::async(std::launch::async, [msg, transform, is_identity]() {
+      pcl::PCLPointCloud2 pcl_cloud;
+      if (is_identity) {
+        pcl_conversions::toPCL(*msg, pcl_cloud);
+      } else {
+        sensor_msgs::msg::PointCloud2 transformed_msg;
+        tf2::doTransform(*msg, transformed_msg, transform);
+        pcl_conversions::toPCL(transformed_msg, pcl_cloud);
+      }
+      return pcl_cloud;
+    }));
+  }
+
+  std::vector<pcl::PCLPointCloud2> transformed_clouds;
+  transformed_clouds.reserve(futures.size());
+  for (auto &future : futures) {
+    transformed_clouds.emplace_back(future.get());
+  }
+
+  pcl::PCLPointCloud2 fused_pcl = transformed_clouds.front();
+  for (size_t i = 1; i < transformed_clouds.size(); ++i) {
+    pcl::PCLPointCloud2 tmp;
+    pcl::concatenate(fused_pcl, transformed_clouds[i], tmp);
+    fused_pcl = std::move(tmp);
+  }
+
+  const size_t fused_points = static_cast<size_t>(fused_pcl.width) * fused_pcl.height;
+
+  auto fused_point_cloud = std::make_unique<PointCloudMsg>();
+  pcl_conversions::moveFromPCL(fused_pcl, *fused_point_cloud);
   fused_point_cloud->header.frame_id = target_frame_;
-  const size_t fused_points = (fused_point_cloud->point_step > 0)
-    ? fused_point_cloud->data.size() / fused_point_cloud->point_step
-    : 0;
-  const auto transform_end = std::chrono::steady_clock::now();
+  fused_point_cloud->header.stamp = latest_stamp;
+
+  const auto processing_end = std::chrono::steady_clock::now();
   cloud_publisher_->publish(std::move(fused_point_cloud));
   const auto publish_end = std::chrono::steady_clock::now();
 
   const double batch_dt_sec = (latest_stamp - earliest_stamp).seconds();
   const double fusion_duration_ms = std::chrono::duration<double, std::milli>(publish_end - callback_start).count();
-  const double transform_duration_ms = std::chrono::duration<double, std::milli>(transform_end - callback_start).count();
-  const double publish_duration_ms = std::chrono::duration<double, std::milli>(publish_end - transform_end).count();
+  const double transform_duration_ms = std::chrono::duration<double, std::milli>(processing_end - transform_start).count();
+  const double publish_duration_ms = std::chrono::duration<double, std::milli>(publish_end - processing_end).count();
 
   RCLCPP_INFO(this->get_logger(),
               "Published fused point cloud (%zu inputs, %zu pts), batch_dt=%.6f s, max_dt=%.6f s, fusion_duration=%.3f ms "
               "(transform=%.3f ms, publish=%.3f ms)",
               msgs.size(), fused_points, batch_dt_sec, max_dt_sec, fusion_duration_ms,
               transform_duration_ms, publish_duration_ms);
-  return true;
 }
 
 
