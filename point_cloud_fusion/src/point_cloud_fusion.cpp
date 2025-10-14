@@ -4,6 +4,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <cstring>
 
 #include <point_cloud_fusion/point_cloud_fusion.hpp>
 
@@ -381,7 +382,9 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
       }
 
       const auto start = raw + idx * cloud.point_step;
-      fused_msg.data.insert(fused_msg.data.end(), start, start + cloud.point_step);
+      const size_t offset = fused_msg.data.size();
+      fused_msg.data.resize(offset + cloud.point_step);
+      std::memcpy(&fused_msg.data[offset], start, cloud.point_step);
       ++total_valid_points;
     }
   }
