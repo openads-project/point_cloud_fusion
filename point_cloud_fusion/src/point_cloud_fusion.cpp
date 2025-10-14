@@ -25,6 +25,7 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
   this->declareAndLoadParameter("input_topics", input_topics_, "List of input point cloud topics", false, true);
   this->declareAndLoadParameter("input_transport_hints", input_transport_hints_, "List of transport hints (one per input)", false);
   this->declareAndLoadParameter("max_time_diff_sec", max_time_diff_sec_, "Max time diff for synchronization (seconds)");
+  this->declareAndLoadParameter("filter_invalid_points", filter_invalid_points_, "Filter out NaN/Inf points (slower but safer)");
 
   // run setup after constructor has finished to enable shared_from_this()
   setup_timer_ = this->create_wall_timer(std::chrono::milliseconds(1), [this]() {
@@ -334,6 +335,28 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
 
   concatenated_msg.header.frame_id = target_frame_;
   concatenated_msg.header.stamp = latest_stamp;
+
+  // Fast path: publish concatenated cloud directly without filtering
+  if (!filter_invalid_points_) {
+    auto fused_point_cloud = std::make_unique<PointCloudMsg>(std::move(concatenated_msg));
+    const size_t total_points = fused_point_cloud->width * fused_point_cloud->height;
+    
+    const auto processing_end = std::chrono::steady_clock::now();
+    cloud_publisher_->publish(std::move(fused_point_cloud));
+    const auto publish_end = std::chrono::steady_clock::now();
+
+    const double batch_dt_sec = (latest_stamp - earliest_stamp).seconds();
+    const double fusion_duration_ms = std::chrono::duration<double, std::milli>(publish_end - callback_start).count();
+    const double transform_duration_ms = std::chrono::duration<double, std::milli>(processing_end - transform_start).count();
+    const double publish_duration_ms = std::chrono::duration<double, std::milli>(publish_end - processing_end).count();
+
+    RCLCPP_INFO(this->get_logger(),
+                "Published fused point cloud (%zu inputs, %zu pts), batch_dt=%.6f s, max_dt=%.6f s, fusion_duration=%.3f ms "
+                "(transform=%.3f ms, publish=%.3f ms)",
+                msgs.size(), total_points, batch_dt_sec, max_dt_sec, fusion_duration_ms,
+                transform_duration_ms, publish_duration_ms);
+    return;
+  }
 
   // Filter invalid points by checking x, y, z coordinates
   int x_offset = -1, y_offset = -1, z_offset = -1;

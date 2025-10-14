@@ -8,6 +8,7 @@
      - "raw"
      - "raw"
     max_time_diff_sec: 0.05 # Maximum allowed timestamp difference (seconds) across inputs
+    filter_invalid_points: true # Set to false for maximum performance (skips NaN/Inf filtering)
 
     # --- point_cloud_transport parameters -----
     # point_cloud_fusion.output.enable_pub_plugins:

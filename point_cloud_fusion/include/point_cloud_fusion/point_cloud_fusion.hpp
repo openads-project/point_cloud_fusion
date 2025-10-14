@@ -104,6 +104,11 @@ class PointCloudFusion : public rclcpp::Node {
   size_t sync_queue_size_ = 20;     // queue size for synchronizer
 
   /**
+   * @brief Filter invalid points during fusion
+   */
+  bool filter_invalid_points_ = true;
+
+  /**
    * @brief TF2 buffer and transform listener
    */
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
