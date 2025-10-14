@@ -95,6 +95,7 @@ class PointCloudFusion : public rclcpp::Node {
   std::vector<bool> transform_ready_;
   std::vector<bool> identity_transforms_;
   std::vector<std::string> source_frames_;
+  sensor_msgs::msg::PointCloud2 filterInvalidPoints(const sensor_msgs::msg::PointCloud2 &input) const;
 
   /**
    * @brief Publisher
