@@ -186,11 +186,6 @@ void PointCloudFusion::setup() {
     cloud_subscribers_.push_back(std::move(subscriber));
   }
 
-  static_transforms_.assign(input_topics_.size(), geometry_msgs::msg::TransformStamped{});
-  transform_ready_.assign(input_topics_.size(), false);
-  identity_transforms_.assign(input_topics_.size(), false);
-  source_frames_.assign(input_topics_.size(), "");
-
   synchronizer_.reset();
 
   // configure synchronization or direct passthrough
@@ -280,31 +275,10 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
   bool first_stamp = true;
   double max_dt_sec = 0.0;
 
-  for (size_t i = 0; i < msgs.size(); ++i) {
-    const auto &pc_msg = msgs[i];
+  for (const auto &pc_msg : msgs) {
     if (!pc_msg) {
       RCLCPP_WARN(this->get_logger(), "Received null point cloud pointer in synchronized batch, skipping fusion");
       return;
-    }
-
-    if (!transform_ready_[i] || source_frames_[i] != pc_msg->header.frame_id) {
-      try {
-        if (pc_msg->header.frame_id == target_frame_) {
-          identity_transforms_[i] = true;
-          static_transforms_[i] = geometry_msgs::msg::TransformStamped{};
-        } else {
-          static_transforms_[i] = tf_buffer_->lookupTransform(
-            target_frame_, pc_msg->header.frame_id, tf2::TimePointZero);
-          identity_transforms_[i] = false;
-        }
-        transform_ready_[i] = true;
-        source_frames_[i] = pc_msg->header.frame_id;
-      } catch (const tf2::TransformException& ex) {
-        RCLCPP_ERROR(this->get_logger(),
-                     "Cannot transform Pointcloud: Transformation from its frame (%s) to target_frame (%s) not found: %s",
-                     pc_msg->header.frame_id.c_str(), target_frame_.c_str(), ex.what());
-        return;
-      }
     }
 
     const rclcpp::Time current_stamp(pc_msg->header.stamp);
@@ -325,101 +299,87 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
 
   const auto transform_start = std::chrono::steady_clock::now();
 
-  sensor_msgs::msg::PointCloud2 fused_msg;
-  fused_msg.header.frame_id = target_frame_;
-  fused_msg.height = 1;
-  fused_msg.width = 0;
-  fused_msg.is_dense = true;
-  fused_msg.point_step = 0;
-
-  size_t total_valid_points = 0;
+  // Transform all clouds to target frame using optimized bulk transformation
+  std::vector<sensor_msgs::msg::PointCloud2> transformed_clouds;
+  transformed_clouds.reserve(msgs.size());
 
   for (size_t i = 0; i < msgs.size(); ++i) {
-    const auto transform = static_transforms_[i];
-    const bool is_identity = identity_transforms_[i];
     const auto &msg = msgs[i];
-
-    sensor_msgs::msg::PointCloud2 transformed_msg;
-    const sensor_msgs::msg::PointCloud2 *cloud_ptr = nullptr;
-    if (is_identity) {
-      cloud_ptr = msg.get();
+    
+    if (msg->header.frame_id != target_frame_) {
+      try {
+        sensor_msgs::msg::PointCloud2 transformed_msg;
+        tf_buffer_->transform(*msg, transformed_msg, target_frame_, tf2::durationFromSec(0.1));
+        transformed_clouds.push_back(std::move(transformed_msg));
+      } catch (const tf2::TransformException& ex) {
+        RCLCPP_ERROR(this->get_logger(),
+                     "Cannot transform Pointcloud: Transformation from its frame (%s) to target_frame (%s) not found: %s",
+                     msg->header.frame_id.c_str(), target_frame_.c_str(), ex.what());
+        return;
+      }
     } else {
-      tf2::doTransform(*msg, transformed_msg, transform);
-      cloud_ptr = &transformed_msg;
-    }
-
-    const auto &cloud = *cloud_ptr;
-    if (cloud.point_step == 0 || cloud.data.empty()) {
-      continue;
-    }
-
-    if (fused_msg.point_step == 0) {
-      fused_msg.fields = cloud.fields;
-      fused_msg.is_bigendian = cloud.is_bigendian;
-      fused_msg.point_step = cloud.point_step;
-    } else if (fused_msg.point_step != cloud.point_step) {
-      RCLCPP_WARN(this->get_logger(),
-                  "Skipping cloud with differing point_step (%u vs %u)",
-                  cloud.point_step, fused_msg.point_step);
-      continue;
-    }
-
-    const size_t num_points = cloud.data.size() / cloud.point_step;
-
-    sensor_msgs::PointCloud2ConstIterator<float> iter_x(cloud, "x");
-    sensor_msgs::PointCloud2ConstIterator<float> iter_y(cloud, "y");
-    sensor_msgs::PointCloud2ConstIterator<float> iter_z(cloud, "z");
-
-    size_t valid_in_cloud = 0;
-    for (size_t idx = 0; idx < num_points; ++idx, ++iter_x, ++iter_y, ++iter_z) {
-      const float x = *iter_x;
-      const float y = *iter_y;
-      const float z = *iter_z;
-      if (std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
-        ++valid_in_cloud;
-      } else {
-        fused_msg.is_dense = false;
-      }
-    }
-
-    if (valid_in_cloud == 0) {
-      continue;
-    }
-
-    fused_msg.data.reserve(fused_msg.data.size() + valid_in_cloud * cloud.point_step);
-    const size_t offset = fused_msg.data.size();
-    fused_msg.data.resize(offset + valid_in_cloud * cloud.point_step);
-    uint8_t *dest = fused_msg.data.data() + offset;
-
-    sensor_msgs::PointCloud2ConstIterator<float> copy_x(cloud, "x");
-    sensor_msgs::PointCloud2ConstIterator<float> copy_y(cloud, "y");
-    sensor_msgs::PointCloud2ConstIterator<float> copy_z(cloud, "z");
-    const uint8_t *raw = cloud.data.data();
-
-    for (size_t idx = 0; idx < num_points; ++idx, ++copy_x, ++copy_y, ++copy_z) {
-      const float x = *copy_x;
-      const float y = *copy_y;
-      const float z = *copy_z;
-      if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
-        continue;
-      }
-
-      const auto start = raw + idx * cloud.point_step;
-      std::memcpy(dest, start, cloud.point_step);
-      dest += cloud.point_step;
-      ++total_valid_points;
+      transformed_clouds.push_back(*msg);
     }
   }
 
-  if (total_valid_points == 0) {
+  // Concatenate all transformed clouds using optimized PCL function
+  sensor_msgs::msg::PointCloud2 concatenated_msg;
+  if (!transformed_clouds.empty()) {
+    concatenated_msg = transformed_clouds[0];
+    for (size_t i = 1; i < transformed_clouds.size(); ++i) {
+      pcl::concatenatePointCloud(concatenated_msg, transformed_clouds[i], concatenated_msg);
+    }
+  }
+
+  // Filter out invalid points in a single pass through the concatenated cloud
+  sensor_msgs::msg::PointCloud2 fused_msg;
+  fused_msg.header.frame_id = target_frame_;
+  fused_msg.header.stamp = latest_stamp;
+  fused_msg.height = 1;
+  fused_msg.is_dense = true;
+  
+  if (concatenated_msg.point_step == 0 || concatenated_msg.data.empty()) {
+    RCLCPP_WARN(this->get_logger(), "Concatenated cloud is empty, skipping fusion");
+    return;
+  }
+
+  fused_msg.fields = concatenated_msg.fields;
+  fused_msg.is_bigendian = concatenated_msg.is_bigendian;
+  fused_msg.point_step = concatenated_msg.point_step;
+
+  const size_t num_points = concatenated_msg.data.size() / concatenated_msg.point_step;
+  
+  // Check validity and copy valid points in a single iteration
+  sensor_msgs::PointCloud2ConstIterator<float> iter_x(concatenated_msg, "x");
+  sensor_msgs::PointCloud2ConstIterator<float> iter_y(concatenated_msg, "y");
+  sensor_msgs::PointCloud2ConstIterator<float> iter_z(concatenated_msg, "z");
+  
+  const uint8_t *raw_data = concatenated_msg.data.data();
+  fused_msg.data.reserve(concatenated_msg.data.size());
+  
+  size_t valid_points = 0;
+  for (size_t idx = 0; idx < num_points; ++idx, ++iter_x, ++iter_y, ++iter_z) {
+    const float x = *iter_x;
+    const float y = *iter_y;
+    const float z = *iter_z;
+    
+    if (std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
+      const uint8_t *point_start = raw_data + idx * concatenated_msg.point_step;
+      fused_msg.data.insert(fused_msg.data.end(), point_start, point_start + concatenated_msg.point_step);
+      ++valid_points;
+    } else {
+      fused_msg.is_dense = false;
+    }
+  }
+
+  if (valid_points == 0) {
     RCLCPP_WARN(this->get_logger(),
                 "Skipping fusion; all input point clouds contain only invalid points");
     return;
   }
 
-  fused_msg.width = static_cast<uint32_t>(total_valid_points);
+  fused_msg.width = static_cast<uint32_t>(valid_points);
   fused_msg.row_step = fused_msg.point_step * fused_msg.width;
-  fused_msg.header.stamp = latest_stamp;
 
   auto fused_point_cloud = std::make_unique<PointCloudMsg>(std::move(fused_msg));
 
@@ -435,7 +395,7 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
   RCLCPP_INFO(this->get_logger(),
               "Published fused point cloud (%zu inputs, %zu pts), batch_dt=%.6f s, max_dt=%.6f s, fusion_duration=%.3f ms "
               "(transform=%.3f ms, publish=%.3f ms)",
-              msgs.size(), total_valid_points, batch_dt_sec, max_dt_sec, fusion_duration_ms,
+              msgs.size(), valid_points, batch_dt_sec, max_dt_sec, fusion_duration_ms,
               transform_duration_ms, publish_duration_ms);
 }
 

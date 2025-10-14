@@ -91,10 +91,6 @@ class PointCloudFusion : public rclcpp::Node {
   using PointCloudMsg = sensor_msgs::msg::PointCloud2;
   std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>> cloud_subscribers_;
   std::shared_ptr<void> synchronizer_;
-  std::vector<geometry_msgs::msg::TransformStamped> static_transforms_;
-  std::vector<bool> transform_ready_;
-  std::vector<bool> identity_transforms_;
-  std::vector<std::string> source_frames_;
 
   /**
    * @brief Publisher
