@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -81,6 +82,36 @@ class PointCloudFusion : public rclcpp::Node {
   template <std::size_t N>
   void setupSynchronizer();
 
+  using PointCloudMsg = sensor_msgs::msg::PointCloud2;
+
+  struct FusionTiming {
+    FusionTiming()
+      : earliest_stamp(rclcpp::Time()),
+        latest_stamp(rclcpp::Time()),
+        max_dt_sec(0.0) {}
+    rclcpp::Time earliest_stamp;
+    rclcpp::Time latest_stamp;
+    double max_dt_sec;
+  };
+
+  bool collectTimingInfo(const std::vector<PointCloudMsg::ConstSharedPtr> &msgs,
+                         FusionTiming &timing) const;
+
+  bool transformAndConcatenate(const std::vector<PointCloudMsg::ConstSharedPtr> &msgs,
+                               const FusionTiming &timing,
+                               sensor_msgs::msg::PointCloud2 &concatenated);
+
+  PointCloudMsg::UniquePtr filterInvalidPoints(const sensor_msgs::msg::PointCloud2 &input,
+                                               std::size_t &valid_point_count) const;
+
+  void publishFusedCloud(PointCloudMsg::UniquePtr cloud,
+                         const FusionTiming &timing,
+                         std::size_t input_count,
+                         std::size_t total_points,
+                         std::chrono::steady_clock::time_point callback_start,
+                         std::chrono::steady_clock::time_point transform_start,
+                         std::chrono::steady_clock::time_point processing_end);
+
  private:
 
   /**
@@ -88,7 +119,6 @@ class PointCloudFusion : public rclcpp::Node {
    */
   std::vector<std::tuple<std::string, std::function<void(const rclcpp::Parameter &)>>> auto_reconfigurable_params_;
 
-  using PointCloudMsg = sensor_msgs::msg::PointCloud2;
   std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>> cloud_subscribers_;
   std::shared_ptr<void> synchronizer_;
 
@@ -102,11 +132,6 @@ class PointCloudFusion : public rclcpp::Node {
    */
   double max_time_diff_sec_ = 0.05; // 50 ms default window
   size_t sync_queue_size_ = 20;     // queue size for synchronizer
-
-  /**
-   * @brief Filter invalid points during fusion
-   */
-  bool filter_invalid_points_ = true;
 
   /**
    * @brief TF2 buffer and transform listener

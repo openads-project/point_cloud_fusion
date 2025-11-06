@@ -1,14 +1,13 @@
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <functional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include <cstring>
 
 #include <point_cloud_fusion/point_cloud_fusion.hpp>
 
-#include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <tf2/time.h>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
@@ -25,8 +24,6 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
   this->declareAndLoadParameter("input_topics", input_topics_, "List of input point cloud topics", false, true);
   this->declareAndLoadParameter("input_transport_hints", input_transport_hints_, "List of transport hints (one per input)", false);
   this->declareAndLoadParameter("max_time_diff_sec", max_time_diff_sec_, "Max time diff for synchronization (seconds)");
-  this->declareAndLoadParameter("filter_invalid_points", filter_invalid_points_, "Filter out NaN/Inf points (slower but safer)");
-
   // run setup after constructor has finished to enable shared_from_this()
   setup_timer_ = this->create_wall_timer(std::chrono::milliseconds(1), [this]() {
     setup();
@@ -114,22 +111,95 @@ void PointCloudFusion::declareAndLoadParameter(const std::string& name,
 
 namespace detail {
 
-template <typename MsgT, std::size_t Remaining, typename... Accumulated>
-struct ApproximatePolicyBuilder;
+template <std::size_t N>
+struct SyncPolicyTraits;
 
-template <typename MsgT, typename... Accumulated>
-struct ApproximatePolicyBuilder<MsgT, 0, Accumulated...> {
-  using type = message_filters::sync_policies::ApproximateTime<Accumulated...>;
+template <>
+struct SyncPolicyTraits<2> {
+  using Policy = message_filters::sync_policies::ApproximateTime<
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2>;
 };
 
-template <typename MsgT, std::size_t Remaining, typename... Accumulated>
-struct ApproximatePolicyBuilder {
-  static_assert(Remaining > 0, "Remaining must be positive");
-  using type = typename ApproximatePolicyBuilder<MsgT, Remaining - 1, Accumulated..., MsgT>::type;
+template <>
+struct SyncPolicyTraits<3> {
+  using Policy = message_filters::sync_policies::ApproximateTime<
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2>;
+};
+
+template <>
+struct SyncPolicyTraits<4> {
+  using Policy = message_filters::sync_policies::ApproximateTime<
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2>;
+};
+
+template <>
+struct SyncPolicyTraits<5> {
+  using Policy = message_filters::sync_policies::ApproximateTime<
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2>;
+};
+
+template <>
+struct SyncPolicyTraits<6> {
+  using Policy = message_filters::sync_policies::ApproximateTime<
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2>;
+};
+
+template <>
+struct SyncPolicyTraits<7> {
+  using Policy = message_filters::sync_policies::ApproximateTime<
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2>;
+};
+
+template <>
+struct SyncPolicyTraits<8> {
+  using Policy = message_filters::sync_policies::ApproximateTime<
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2>;
+};
+
+template <>
+struct SyncPolicyTraits<9> {
+  using Policy = message_filters::sync_policies::ApproximateTime<
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2,
+      sensor_msgs::msg::PointCloud2>;
 };
 
 template <std::size_t N>
-using SyncPolicy = typename ApproximatePolicyBuilder<sensor_msgs::msg::PointCloud2, N>::type;
+using SyncPolicy = typename SyncPolicyTraits<N>::Policy;
 
 template <std::size_t N>
 using SyncType = message_filters::Synchronizer<SyncPolicy<N>>;
@@ -138,6 +208,7 @@ template <std::size_t N, std::size_t... Is>
 void connectInputsImpl(SyncType<N> &sync,
                        const std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>> &subs,
                        std::index_sequence<Is...>) {
+  // Fan the subscriber filters into the synchronizer inputs.
   sync.connectInput(*subs[Is]...);
 }
 
@@ -232,18 +303,23 @@ void PointCloudFusion::setupSynchronizer() {
   using Policy = detail::SyncPolicy<N>;
   using Sync = detail::SyncType<N>;
 
+  // Instantiate ApproximateTime policy tuned to the active input count.
   auto sync = std::make_shared<Sync>(Policy(sync_queue_size_));
 
+  // Wire the configured subscribers into the synchronizer slots.
   detail::connectInputs<N>(*sync, cloud_subscribers_);
 
   sync->setMaxIntervalDuration(rclcpp::Duration::from_seconds(max_time_diff_sec_));
   sync->registerCallback([this](auto &&... msgs) {
     std::vector<PointCloudMsg::ConstSharedPtr> batch;
     batch.reserve(sizeof...(msgs));
-    auto append = [&batch](auto &&m) {
-      using ArgT = std::remove_cv_t<std::remove_reference_t<decltype(m)>>;
-      if constexpr (std::is_convertible_v<ArgT, PointCloudMsg::ConstSharedPtr>) {
-        batch.emplace_back(m);
+    // Extract only valid PointCloud2 pointers from the variadic callback.
+    auto append = [&batch](auto &&msg) {
+      using ArgT = std::decay_t<decltype(msg)>;
+      if constexpr (std::is_same_v<ArgT, PointCloudMsg::ConstSharedPtr>) {
+        if (msg) {
+          batch.emplace_back(std::forward<decltype(msg)>(msg));
+        }
       }
     };
     (append(std::forward<decltype(msgs)>(msgs)), ...);
@@ -268,18 +344,53 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
   }
 
   const auto callback_start = std::chrono::steady_clock::now();
-  const auto clock_type = this->get_clock()->get_clock_type();
+
+  FusionTiming timing;
+  if (!collectTimingInfo(msgs, timing)) {
+    return;
+  }
+
+  const auto transform_start = std::chrono::steady_clock::now();
+
+  sensor_msgs::msg::PointCloud2 concatenated_msg{};
+  if (!transformAndConcatenate(msgs, timing, concatenated_msg)) {
+    return;
+  }
+
+  std::size_t valid_count = 0;
+  auto fused_point_cloud = filterInvalidPoints(concatenated_msg, valid_count);
+  if (!fused_point_cloud) {
+    RCLCPP_WARN(this->get_logger(), "All points are invalid, skipping fusion");
+    return;
+  }
+
+  const auto processing_end = std::chrono::steady_clock::now();
+  publishFusedCloud(std::move(fused_point_cloud),
+                    timing,
+                    msgs.size(),
+                    valid_count,
+                    callback_start,
+                    transform_start,
+                    processing_end);
+}
+
+bool PointCloudFusion::collectTimingInfo(const std::vector<PointCloudMsg::ConstSharedPtr> &msgs,
+                                         FusionTiming &timing) const {
+  if (msgs.empty()) {
+    return false;
+  }
 
   const auto reference_stamp = rclcpp::Time(msgs.front()->header.stamp);
-  rclcpp::Time earliest_stamp(0, 0, clock_type);
-  rclcpp::Time latest_stamp(0, 0, clock_type);
   bool first_stamp = true;
   double max_dt_sec = 0.0;
+  rclcpp::Time earliest_stamp;
+  rclcpp::Time latest_stamp;
 
+  // Walk every cloud once to gather min/max stamps and the largest skew from the reference frame.
   for (const auto &pc_msg : msgs) {
     if (!pc_msg) {
       RCLCPP_WARN(this->get_logger(), "Received null point cloud pointer in synchronized batch, skipping fusion");
-      return;
+      return false;
     }
 
     const rclcpp::Time current_stamp(pc_msg->header.stamp);
@@ -298,152 +409,136 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
     }
   }
 
-  const auto transform_start = std::chrono::steady_clock::now();
+  timing.earliest_stamp = earliest_stamp;
+  timing.latest_stamp = latest_stamp;
+  timing.max_dt_sec = max_dt_sec;
+  return true;
+}
 
-  // Transform all clouds to target frame using optimized bulk transformation
-  std::vector<sensor_msgs::msg::PointCloud2> transformed_clouds;
-  transformed_clouds.reserve(msgs.size());
+bool PointCloudFusion::transformAndConcatenate(const std::vector<PointCloudMsg::ConstSharedPtr> &msgs,
+                                               const FusionTiming &timing,
+                                               sensor_msgs::msg::PointCloud2 &concatenated) {
+  sensor_msgs::msg::PointCloud2 accumulated;
+  bool first = true;
 
-  for (size_t i = 0; i < msgs.size(); ++i) {
-    const auto &msg = msgs[i];
-    
+  // Transform each cloud into the target frame and append it to the running result.
+  for (const auto &msg : msgs) {
+    sensor_msgs::msg::PointCloud2 transformed;
     if (msg->header.frame_id != target_frame_) {
       try {
-        sensor_msgs::msg::PointCloud2 transformed_msg;
-        tf_buffer_->transform(*msg, transformed_msg, target_frame_, tf2::durationFromSec(0.1));
-        transformed_clouds.push_back(std::move(transformed_msg));
-      } catch (const tf2::TransformException& ex) {
+        tf_buffer_->transform(*msg, transformed, target_frame_, tf2::durationFromSec(0.1));
+      } catch (const tf2::TransformException &ex) {
         RCLCPP_ERROR(this->get_logger(),
-                     "Cannot transform Pointcloud: Transformation from its frame (%s) to target_frame (%s) not found: %s",
+                     "Cannot transform point cloud: Transformation from %s to target_frame %s not found: %s",
                      msg->header.frame_id.c_str(), target_frame_.c_str(), ex.what());
-        return;
+        return false;
       }
     } else {
-      transformed_clouds.push_back(*msg);
+      transformed = *msg;
+    }
+
+    if (first) {
+      accumulated = std::move(transformed);
+      first = false;
+    } else {
+      sensor_msgs::msg::PointCloud2 tmp;
+      pcl::concatenatePointCloud(accumulated, transformed, tmp);
+      accumulated = std::move(tmp);
     }
   }
 
-  // Concatenate all transformed clouds using optimized PCL function
-  sensor_msgs::msg::PointCloud2 concatenated_msg;
-  
-  if (!transformed_clouds.empty()) {
-    concatenated_msg = transformed_clouds[0];
-    for (size_t i = 1; i < transformed_clouds.size(); ++i) {
-      pcl::concatenatePointCloud(concatenated_msg, transformed_clouds[i], concatenated_msg);
-    }
+  if (first) {
+    // No valid input clouds.
+    return false;
   }
 
-  concatenated_msg.header.frame_id = target_frame_;
-  concatenated_msg.header.stamp = latest_stamp;
+  accumulated.header.frame_id = target_frame_;
+  accumulated.header.stamp = timing.latest_stamp;
+  concatenated = std::move(accumulated);
+  return true;
+}
 
-  // Fast path: publish concatenated cloud directly without filtering
-  if (!filter_invalid_points_) {
-    auto fused_point_cloud = std::make_unique<PointCloudMsg>(std::move(concatenated_msg));
-    const size_t total_points = fused_point_cloud->width * fused_point_cloud->height;
-    
-    const auto processing_end = std::chrono::steady_clock::now();
-    cloud_publisher_->publish(std::move(fused_point_cloud));
-    const auto publish_end = std::chrono::steady_clock::now();
+PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::filterInvalidPoints(
+    const sensor_msgs::msg::PointCloud2 &input,
+    std::size_t &valid_point_count) const {
 
-    const double batch_dt_sec = (latest_stamp - earliest_stamp).seconds();
-    const double fusion_duration_ms = std::chrono::duration<double, std::milli>(publish_end - callback_start).count();
-    const double transform_duration_ms = std::chrono::duration<double, std::milli>(processing_end - transform_start).count();
-    const double publish_duration_ms = std::chrono::duration<double, std::milli>(publish_end - processing_end).count();
-
-    RCLCPP_INFO(this->get_logger(),
-                "Published fused point cloud (%zu inputs, %zu pts), batch_dt=%.6f s, max_dt=%.6f s, fusion_duration=%.3f ms "
-                "(transform=%.3f ms, publish=%.3f ms)",
-                msgs.size(), total_points, batch_dt_sec, max_dt_sec, fusion_duration_ms,
-                transform_duration_ms, publish_duration_ms);
-    return;
-  }
-
-  // Filter invalid points by checking x, y, z coordinates
-  int x_offset = -1, y_offset = -1, z_offset = -1;
-  for (const auto& field : concatenated_msg.fields) {
+  int x_offset = -1;
+  int y_offset = -1;
+  int z_offset = -1;
+  for (const auto &field : input.fields) {
+    // Locate the xyz fields once; fallback to publishing raw data if they are missing.
     if (field.name == "x") x_offset = field.offset;
     else if (field.name == "y") y_offset = field.offset;
     else if (field.name == "z") z_offset = field.offset;
   }
 
   if (x_offset < 0 || y_offset < 0 || z_offset < 0) {
-    // No xyz fields, just publish as-is
-    auto fused_point_cloud = std::make_unique<PointCloudMsg>(std::move(concatenated_msg));
-    const size_t total_points = fused_point_cloud->width * fused_point_cloud->height;
-    
-    const auto processing_end = std::chrono::steady_clock::now();
-    cloud_publisher_->publish(std::move(fused_point_cloud));
-    const auto publish_end = std::chrono::steady_clock::now();
-
-    const double batch_dt_sec = (latest_stamp - earliest_stamp).seconds();
-    const double fusion_duration_ms = std::chrono::duration<double, std::milli>(publish_end - callback_start).count();
-    const double transform_duration_ms = std::chrono::duration<double, std::milli>(processing_end - transform_start).count();
-    const double publish_duration_ms = std::chrono::duration<double, std::milli>(publish_end - processing_end).count();
-
-    RCLCPP_INFO(this->get_logger(),
-                "Published fused point cloud (%zu inputs, %zu pts), batch_dt=%.6f s, max_dt=%.6f s, fusion_duration=%.3f ms "
-                "(transform=%.3f ms, publish=%.3f ms)",
-                msgs.size(), total_points, batch_dt_sec, max_dt_sec, fusion_duration_ms,
-                transform_duration_ms, publish_duration_ms);
-    return;
+    RCLCPP_WARN(this->get_logger(),
+                "Point cloud lacks x/y/z fields; publishing concatenated cloud without filtering.");
+    valid_point_count = static_cast<std::size_t>(input.width) * static_cast<std::size_t>(input.height);
+    return std::make_unique<PointCloudMsg>(input);
   }
 
-  // First pass: count valid points
-  const size_t num_points = concatenated_msg.data.size() / concatenated_msg.point_step;
-  const uint8_t *src_data = concatenated_msg.data.data();
-  
-  size_t valid_count = 0;
+  const size_t num_points = input.data.size() / input.point_step;
+  const uint8_t *src_data = input.data.data();
+
+  valid_point_count = 0;
+  // First pass counts finite xyz samples so we can pre-size the output cloud.
   for (size_t idx = 0; idx < num_points; ++idx) {
-    const uint8_t *point_ptr = src_data + idx * concatenated_msg.point_step;
-    const float x = *reinterpret_cast<const float*>(point_ptr + x_offset);
-    const float y = *reinterpret_cast<const float*>(point_ptr + y_offset);
-    const float z = *reinterpret_cast<const float*>(point_ptr + z_offset);
-    
+    const uint8_t *point_ptr = src_data + idx * input.point_step;
+    const float x = *reinterpret_cast<const float *>(point_ptr + x_offset);
+    const float y = *reinterpret_cast<const float *>(point_ptr + y_offset);
+    const float z = *reinterpret_cast<const float *>(point_ptr + z_offset);
+
     if (std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
-      ++valid_count;
+      ++valid_point_count;
     }
   }
 
-  if (valid_count == 0) {
-    RCLCPP_WARN(this->get_logger(), "All points are invalid, skipping fusion");
-    return;
+  if (valid_point_count == 0) {
+    return nullptr;
   }
 
-  // Create output message and pre-allocate exact size
-  sensor_msgs::msg::PointCloud2::UniquePtr fused_point_cloud = std::make_unique<sensor_msgs::msg::PointCloud2>();
-  fused_point_cloud->header = concatenated_msg.header;
-  fused_point_cloud->height = 1;
-  fused_point_cloud->width = valid_count;
-  fused_point_cloud->fields = concatenated_msg.fields;
-  fused_point_cloud->is_bigendian = concatenated_msg.is_bigendian;
-  fused_point_cloud->point_step = concatenated_msg.point_step;
-  fused_point_cloud->row_step = fused_point_cloud->point_step * fused_point_cloud->width;
-  fused_point_cloud->is_dense = true;
-  
-  // Pre-allocate output buffer to avoid reallocations during copying
-  fused_point_cloud->data.resize(valid_count * concatenated_msg.point_step);
-  
-  // Second pass: copy valid points using direct memory operations
-  uint8_t *dest_ptr = fused_point_cloud->data.data();
+  auto output = std::make_unique<PointCloudMsg>();
+  output->header = input.header;
+  output->height = 1;
+  output->width = valid_point_count;
+  output->fields = input.fields;
+  output->is_bigendian = input.is_bigendian;
+  output->point_step = input.point_step;
+  output->row_step = output->point_step * output->width;
+  output->is_dense = true;
+  output->data.resize(valid_point_count * input.point_step);
+
+  // Second pass copies only the finite samples into the dense output buffer.
+  uint8_t *dest_ptr = output->data.data();
   for (size_t idx = 0; idx < num_points; ++idx) {
-    const uint8_t *point_ptr = src_data + idx * concatenated_msg.point_step;
-    const float x = *reinterpret_cast<const float*>(point_ptr + x_offset);
-    const float y = *reinterpret_cast<const float*>(point_ptr + y_offset);
-    const float z = *reinterpret_cast<const float*>(point_ptr + z_offset);
-    
+    const uint8_t *point_ptr = src_data + idx * input.point_step;
+    const float x = *reinterpret_cast<const float *>(point_ptr + x_offset);
+    const float y = *reinterpret_cast<const float *>(point_ptr + y_offset);
+    const float z = *reinterpret_cast<const float *>(point_ptr + z_offset);
+
     if (std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
-      memcpy(dest_ptr, point_ptr, concatenated_msg.point_step);
-      dest_ptr += concatenated_msg.point_step;
+      std::memcpy(dest_ptr, point_ptr, input.point_step);
+      dest_ptr += input.point_step;
     }
   }
 
-  const size_t total_points = fused_point_cloud->width * fused_point_cloud->height;
-  
-  const auto processing_end = std::chrono::steady_clock::now();
-  cloud_publisher_->publish(std::move(fused_point_cloud));
+  return output;
+}
+
+void PointCloudFusion::publishFusedCloud(PointCloudMsg::UniquePtr cloud,
+                                         const FusionTiming &timing,
+                                         std::size_t input_count,
+                                         std::size_t total_points,
+                                         std::chrono::steady_clock::time_point callback_start,
+                                         std::chrono::steady_clock::time_point transform_start,
+                                         std::chrono::steady_clock::time_point processing_end) {
+  // Publish the fused cloud and emit a compact timing summary for observability.
+  cloud_publisher_->publish(std::move(cloud));
   const auto publish_end = std::chrono::steady_clock::now();
 
-  const double batch_dt_sec = (latest_stamp - earliest_stamp).seconds();
+  const double batch_dt_sec = (timing.latest_stamp - timing.earliest_stamp).seconds();
   const double fusion_duration_ms = std::chrono::duration<double, std::milli>(publish_end - callback_start).count();
   const double transform_duration_ms = std::chrono::duration<double, std::milli>(processing_end - transform_start).count();
   const double publish_duration_ms = std::chrono::duration<double, std::milli>(publish_end - processing_end).count();
@@ -451,8 +546,13 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
   RCLCPP_INFO(this->get_logger(),
               "Published fused point cloud (%zu inputs, %zu pts), batch_dt=%.6f s, max_dt=%.6f s, fusion_duration=%.3f ms "
               "(transform=%.3f ms, publish=%.3f ms)",
-              msgs.size(), total_points, batch_dt_sec, max_dt_sec, fusion_duration_ms,
-              transform_duration_ms, publish_duration_ms);
+              input_count,
+              total_points,
+              batch_dt_sec,
+              timing.max_dt_sec,
+              fusion_duration_ms,
+              transform_duration_ms,
+              publish_duration_ms);
 }
 
 
