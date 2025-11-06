@@ -2,13 +2,16 @@
 #include <cmath>
 #include <cstring>
 #include <functional>
+#include <numeric>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
 #include <point_cloud_fusion/point_cloud_fusion.hpp>
 
+#include <tf2/LinearMath/Transform.h>
 #include <tf2/time.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
 #include <rclcpp_components/register_node_macro.hpp>
@@ -350,15 +353,9 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
     return;
   }
 
-  const auto transform_start = std::chrono::steady_clock::now();
-
-  sensor_msgs::msg::PointCloud2 concatenated_msg{};
-  if (!transformAndConcatenate(msgs, timing, concatenated_msg)) {
-    return;
-  }
-
   std::size_t valid_count = 0;
-  auto fused_point_cloud = filterInvalidPoints(concatenated_msg, valid_count);
+  const auto transform_start = std::chrono::steady_clock::now();
+  auto fused_point_cloud = fusePointCloudBatch(msgs, timing, valid_count);
   if (!fused_point_cloud) {
     RCLCPP_WARN(this->get_logger(), "All points are invalid, skipping fusion");
     return;
@@ -415,58 +412,24 @@ bool PointCloudFusion::collectTimingInfo(const std::vector<PointCloudMsg::ConstS
   return true;
 }
 
-bool PointCloudFusion::transformAndConcatenate(const std::vector<PointCloudMsg::ConstSharedPtr> &msgs,
-                                               const FusionTiming &timing,
-                                               sensor_msgs::msg::PointCloud2 &concatenated) {
-  sensor_msgs::msg::PointCloud2 accumulated;
-  bool first = true;
-
-  // Transform each cloud into the target frame and append it to the running result.
-  for (const auto &msg : msgs) {
-    sensor_msgs::msg::PointCloud2 transformed;
-    if (msg->header.frame_id != target_frame_) {
-      try {
-        tf_buffer_->transform(*msg, transformed, target_frame_, tf2::durationFromSec(0.1));
-      } catch (const tf2::TransformException &ex) {
-        RCLCPP_ERROR(this->get_logger(),
-                     "Cannot transform point cloud: Transformation from %s to target_frame %s not found: %s",
-                     msg->header.frame_id.c_str(), target_frame_.c_str(), ex.what());
-        return false;
-      }
-    } else {
-      transformed = *msg;
-    }
-
-    if (first) {
-      accumulated = std::move(transformed);
-      first = false;
-    } else {
-      sensor_msgs::msg::PointCloud2 tmp;
-      pcl::concatenatePointCloud(accumulated, transformed, tmp);
-      accumulated = std::move(tmp);
-    }
-  }
-
-  if (first) {
-    // No valid input clouds.
-    return false;
-  }
-
-  accumulated.header.frame_id = target_frame_;
-  accumulated.header.stamp = timing.latest_stamp;
-  concatenated = std::move(accumulated);
-  return true;
-}
-
-PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::filterInvalidPoints(
-    const sensor_msgs::msg::PointCloud2 &input,
+PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch(
+    const std::vector<PointCloudMsg::ConstSharedPtr> &msgs,
+    const FusionTiming &timing,
     std::size_t &valid_point_count) const {
+
+  if (msgs.empty()) {
+    return nullptr;
+  }
+
+  const auto &reference = msgs.front();
+  if (!reference) {
+    return nullptr;
+  }
 
   int x_offset = -1;
   int y_offset = -1;
   int z_offset = -1;
-  for (const auto &field : input.fields) {
-    // Locate the xyz fields once; fallback to publishing raw data if they are missing.
+  for (const auto &field : reference->fields) {
     if (field.name == "x") x_offset = field.offset;
     else if (field.name == "y") y_offset = field.offset;
     else if (field.name == "z") z_offset = field.offset;
@@ -474,56 +437,127 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::filterInvalidPoints
 
   if (x_offset < 0 || y_offset < 0 || z_offset < 0) {
     RCLCPP_WARN(this->get_logger(),
-                "Point cloud lacks x/y/z fields; publishing concatenated cloud without filtering.");
-    valid_point_count = static_cast<std::size_t>(input.width) * static_cast<std::size_t>(input.height);
-    return std::make_unique<PointCloudMsg>(input);
+                "Point cloud lacks x/y/z fields; skipping fusion for this batch.");
+    valid_point_count = 0;
+    return nullptr;
   }
 
-  const size_t num_points = input.data.size() / input.point_step;
-  const uint8_t *src_data = input.data.data();
+  const size_t point_step = reference->point_step;
+  const auto &reference_fields = reference->fields;
+  const bool is_bigendian = reference->is_bigendian;
 
+  // Reserve enough space once so the fusion loop only appends into a pre-sized buffer.
+  const size_t max_capacity =
+      std::accumulate(msgs.begin(), msgs.end(), static_cast<size_t>(0),
+                      [](size_t sum, const PointCloudMsg::ConstSharedPtr &cloud) {
+                        if (!cloud) {
+                          return sum;
+                        }
+                        return sum + static_cast<size_t>(cloud->width) * static_cast<size_t>(cloud->height);
+                      });
+
+  if (max_capacity == 0) {
+    valid_point_count = 0;
+    return nullptr;
+  }
+
+  auto output = std::make_unique<PointCloudMsg>();
+  output->header.frame_id = target_frame_;
+  output->header.stamp = timing.latest_stamp;
+  output->height = 1;
+  output->is_bigendian = is_bigendian;
+  output->point_step = point_step;
+  output->fields = reference_fields;
+  output->is_dense = true;
+  output->data.resize(max_capacity * point_step);
+
+  uint8_t *dest_ptr = output->data.data();
   valid_point_count = 0;
-  // First pass counts finite xyz samples so we can pre-size the output cloud.
-  for (size_t idx = 0; idx < num_points; ++idx) {
-    const uint8_t *point_ptr = src_data + idx * input.point_step;
-    const float x = *reinterpret_cast<const float *>(point_ptr + x_offset);
-    const float y = *reinterpret_cast<const float *>(point_ptr + y_offset);
-    const float z = *reinterpret_cast<const float *>(point_ptr + z_offset);
+  std::size_t skipped_inputs = 0;
 
-    if (std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
+  for (const auto &msg : msgs) {
+    if (!msg) {
+      continue;
+    }
+
+    if (msg->point_step != point_step || msg->fields != reference_fields) {
+      RCLCPP_WARN(this->get_logger(),
+                  "Skipping point cloud '%s' due to incompatible field layout.",
+                  msg->header.frame_id.c_str());
+      ++skipped_inputs;
+      continue;
+    }
+
+    // Cache the frame transform once per cloud to avoid repeated TF queries inside the point loop.
+    tf2::Transform tf_transform;
+    if (msg->header.frame_id == target_frame_) {
+      // Skip TF lookups when the cloud already matches the target frame.
+      tf_transform.setIdentity();
+    } else {
+      geometry_msgs::msg::TransformStamped tf_stamped;
+      try {
+        tf_stamped = tf_buffer_->lookupTransform(
+            target_frame_,
+            msg->header.frame_id,
+            msg->header.stamp,
+            rclcpp::Duration::from_seconds(0.1));
+      } catch (const tf2::TransformException &ex) {
+        RCLCPP_ERROR(this->get_logger(),
+                     "Cannot transform point cloud from %s to %s: %s",
+                     msg->header.frame_id.c_str(), target_frame_.c_str(), ex.what());
+        ++skipped_inputs;
+        continue;
+      }
+      tf2::fromMsg(tf_stamped.transform, tf_transform);
+    }
+
+    const tf2::Vector3 translation = tf_transform.getOrigin();
+    const tf2::Matrix3x3 rotation = tf_transform.getBasis();
+
+    const auto *src_data = msg->data.data();
+    const size_t num_points = static_cast<size_t>(msg->width) * static_cast<size_t>(msg->height);
+
+    // Walk each point once so we fuse, filter, and transform without extra temporaries.
+    for (size_t idx = 0; idx < num_points; ++idx) {
+      const auto *point_ptr = src_data + idx * point_step;
+      const float x = *reinterpret_cast<const float *>(point_ptr + x_offset);
+      const float y = *reinterpret_cast<const float *>(point_ptr + y_offset);
+      const float z = *reinterpret_cast<const float *>(point_ptr + z_offset);
+
+      if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+        continue;
+      }
+
+      const tf2::Vector3 rotated = rotation * tf2::Vector3(x, y, z) + translation;
+
+      std::memcpy(dest_ptr, point_ptr, point_step);
+
+      auto *dest_x = reinterpret_cast<float *>(dest_ptr + x_offset);
+      auto *dest_y = reinterpret_cast<float *>(dest_ptr + y_offset);
+      auto *dest_z = reinterpret_cast<float *>(dest_ptr + z_offset);
+
+      *dest_x = static_cast<float>(rotated.x());
+      *dest_y = static_cast<float>(rotated.y());
+      *dest_z = static_cast<float>(rotated.z());
+
+      dest_ptr += point_step;
       ++valid_point_count;
     }
   }
 
   if (valid_point_count == 0) {
+    if (skipped_inputs == msgs.size()) {
+      RCLCPP_WARN(this->get_logger(),
+                  "Skipped all point clouds in synchronized batch; no data fused.");
+    }
     return nullptr;
   }
 
-  auto output = std::make_unique<PointCloudMsg>();
-  output->header = input.header;
-  output->height = 1;
   output->width = valid_point_count;
-  output->fields = input.fields;
-  output->is_bigendian = input.is_bigendian;
-  output->point_step = input.point_step;
   output->row_step = output->point_step * output->width;
+  output->data.resize(valid_point_count * point_step);
+
   output->is_dense = true;
-  output->data.resize(valid_point_count * input.point_step);
-
-  // Second pass copies only the finite samples into the dense output buffer.
-  uint8_t *dest_ptr = output->data.data();
-  for (size_t idx = 0; idx < num_points; ++idx) {
-    const uint8_t *point_ptr = src_data + idx * input.point_step;
-    const float x = *reinterpret_cast<const float *>(point_ptr + x_offset);
-    const float y = *reinterpret_cast<const float *>(point_ptr + y_offset);
-    const float z = *reinterpret_cast<const float *>(point_ptr + z_offset);
-
-    if (std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
-      std::memcpy(dest_ptr, point_ptr, input.point_step);
-      dest_ptr += input.point_step;
-    }
-  }
-
   return output;
 }
 

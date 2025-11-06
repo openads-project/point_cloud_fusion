@@ -97,11 +97,8 @@ class PointCloudFusion : public rclcpp::Node {
   bool collectTimingInfo(const std::vector<PointCloudMsg::ConstSharedPtr> &msgs,
                          FusionTiming &timing) const;
 
-  bool transformAndConcatenate(const std::vector<PointCloudMsg::ConstSharedPtr> &msgs,
-                               const FusionTiming &timing,
-                               sensor_msgs::msg::PointCloud2 &concatenated);
-
-  PointCloudMsg::UniquePtr filterInvalidPoints(const sensor_msgs::msg::PointCloud2 &input,
+  PointCloudMsg::UniquePtr fusePointCloudBatch(const std::vector<PointCloudMsg::ConstSharedPtr> &msgs,
+                                               const FusionTiming &timing,
                                                std::size_t &valid_point_count) const;
 
   void publishFusedCloud(PointCloudMsg::UniquePtr cloud,
