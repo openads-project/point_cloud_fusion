@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -7,6 +8,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <cctype>
 
 #include <point_cloud_fusion/point_cloud_fusion.hpp>
 
@@ -51,8 +53,15 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
   this->declareAndLoadParameter("target_frame", target_frame_, "Target frame of fused point cloud", false, true);
   this->declareAndLoadParameter("input_topics", input_topics_, "List of input point cloud topics", false, true);
   this->declareAndLoadParameter("input_transport_hints", input_transport_hints_, "List of transport hints (one per input)", false);
+  this->declareAndLoadParameter("sync_queue_size", sync_queue_size_, "Queue size for message_filters synchronizer", false);
   this->declareAndLoadParameter("output_fields", output_fields_, "Fields to include in the fused output (empty publishes all fields)");
+  this->declareAndLoadParameter("output_stamp_mode", output_stamp_mode_param_, "Timestamp to assign to fused cloud (latest, earliest, mean, reference)", false);
   this->declareAndLoadParameter("max_time_diff_sec", max_time_diff_sec_, "Max time diff for synchronization (seconds)");
+  if (sync_queue_size_ <= 0) {
+    RCLCPP_WARN(this->get_logger(), "sync_queue_size must be positive; forcing to 1 to keep synchronizer alive.");
+    sync_queue_size_ = 1;
+  }
+  configureOutputStampMode(output_stamp_mode_param_);
   // run setup after constructor has finished to enable shared_from_this()
   setup_timer_ = this->create_wall_timer(std::chrono::milliseconds(1), [this]() {
     setup();
@@ -126,7 +135,8 @@ void PointCloudFusion::declareAndLoadParameter(const std::string& name,
         ss << param;
       }
       RCLCPP_WARN_STREAM(this->get_logger(), ss.str());
-      this->set_parameters({rclcpp::Parameter(name, rclcpp::ParameterValue(param))});
+      this->set_parameters(std::vector<rclcpp::Parameter>{
+          rclcpp::Parameter(name, rclcpp::ParameterValue(param))});
     }
   }
 
@@ -333,7 +343,7 @@ void PointCloudFusion::setupSynchronizer() {
   using Sync = detail::SyncType<N>;
 
   // Instantiate ApproximateTime policy tuned to the active input count.
-  auto sync = std::make_shared<Sync>(Policy(sync_queue_size_));
+  auto sync = std::make_shared<Sync>(Policy(static_cast<size_t>(sync_queue_size_)));
 
   // Wire the configured subscribers into the synchronizer slots.
   detail::connectInputs<N>(*sync, cloud_subscribers_);
@@ -364,7 +374,7 @@ void PointCloudFusion::setupSynchronizer() {
 
   RCLCPP_INFO(this->get_logger(),
               "Configured approximate time synchronizer for %zu inputs (queue=%zu, max_dt=%.3f s)",
-              static_cast<size_t>(N), sync_queue_size_, max_time_diff_sec_);
+              static_cast<size_t>(N), static_cast<size_t>(sync_queue_size_), max_time_diff_sec_);
 }
 
 void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_msgs::msg::PointCloud2::ConstSharedPtr> &msgs) {
@@ -434,6 +444,7 @@ bool PointCloudFusion::collectTimingInfo(const std::vector<PointCloudMsg::ConstS
 
   timing.earliest_stamp = earliest_stamp;
   timing.latest_stamp = latest_stamp;
+  timing.reference_stamp = reference_stamp;
   timing.max_dt_sec = max_dt_sec;
   return true;
 }
@@ -572,7 +583,26 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
 
   auto output = std::make_unique<PointCloudMsg>();
   output->header.frame_id = target_frame_;
-  output->header.stamp = timing.latest_stamp;
+  rclcpp::Time chosen_stamp;
+  switch (output_stamp_mode_) {
+    case OutputStampMode::Earliest:
+      chosen_stamp = timing.earliest_stamp;
+      break;
+    case OutputStampMode::Mean: {
+      const auto delta = timing.latest_stamp - timing.earliest_stamp;
+      chosen_stamp =
+          timing.earliest_stamp + rclcpp::Duration::from_nanoseconds(delta.nanoseconds() / 2);
+      break;
+    }
+    case OutputStampMode::Reference:
+      chosen_stamp = timing.reference_stamp;
+      break;
+    case OutputStampMode::Latest:
+    default:
+      chosen_stamp = timing.latest_stamp;
+      break;
+  }
+  output->header.stamp = chosen_stamp;
   output->height = 1;
   output->is_bigendian = is_bigendian;
   output->point_step = fused_point_step;
@@ -705,6 +735,27 @@ void PointCloudFusion::publishFusedCloud(PointCloudMsg::UniquePtr cloud,
               fusion_duration_ms,
               transform_duration_ms,
               publish_duration_ms);
+}
+
+void PointCloudFusion::configureOutputStampMode(const std::string &mode) {
+  std::string lowered = mode;
+  std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+  if (lowered == "earliest") {
+    output_stamp_mode_ = OutputStampMode::Earliest;
+  } else if (lowered == "mean" || lowered == "mid" || lowered == "midpoint") {
+    output_stamp_mode_ = OutputStampMode::Mean;
+  } else if (lowered == "reference" || lowered == "ref") {
+    output_stamp_mode_ = OutputStampMode::Reference;
+  } else if (lowered == "latest") {
+    output_stamp_mode_ = OutputStampMode::Latest;
+  } else {
+    RCLCPP_WARN(this->get_logger(),
+                "Invalid output_stamp_mode '%s'; defaulting to 'latest'.",
+                mode.c_str());
+    output_stamp_mode_ = OutputStampMode::Latest;
+  }
 }
 
 

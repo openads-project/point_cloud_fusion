@@ -88,9 +88,11 @@ class PointCloudFusion : public rclcpp::Node {
     FusionTiming()
       : earliest_stamp(rclcpp::Time()),
         latest_stamp(rclcpp::Time()),
+        reference_stamp(rclcpp::Time()),
         max_dt_sec(0.0) {}
     rclcpp::Time earliest_stamp;
     rclcpp::Time latest_stamp;
+    rclcpp::Time reference_stamp;
     double max_dt_sec;
   };
 
@@ -110,6 +112,14 @@ class PointCloudFusion : public rclcpp::Node {
                          std::chrono::steady_clock::time_point processing_end);
 
  private:
+  enum class OutputStampMode {
+    Latest,
+    Earliest,
+    Mean,
+    Reference
+  };
+
+  void configureOutputStampMode(const std::string &mode);
 
   /**
    * @brief Auto-reconfigurable parameters for dynamic reconfiguration
@@ -128,7 +138,9 @@ class PointCloudFusion : public rclcpp::Node {
    * @brief Synchronization parameters
    */
   double max_time_diff_sec_ = 0.05; // 50 ms default window
-  size_t sync_queue_size_ = 20;     // queue size for synchronizer
+  int64_t sync_queue_size_ = 3;    // queue size for synchronizer
+  OutputStampMode output_stamp_mode_ = OutputStampMode::Latest;
+  std::string output_stamp_mode_param_ = "earliest";
 
   /**
    * @brief TF2 buffer and transform listener
