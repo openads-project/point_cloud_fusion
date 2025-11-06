@@ -9,6 +9,17 @@
      - "raw"
     max_time_diff_sec: 0.05 # Maximum allowed timestamp difference (seconds) across inputs
 
+    # output_fields: # Determine which fields to include in the output point cloud (all if commented out)
+    #   - "x"
+    #   - "y"
+    #   - "z"
+    #   - "intensity"
+    #   - "t"
+    #   - "reflectivity"
+    #   - "ring"
+    #   - "ambient"
+    #   - "range"
+
     # --- point_cloud_transport parameters -----
     # point_cloud_fusion.output.enable_pub_plugins:
     #   - point_cloud_transport/cloudini
