@@ -124,7 +124,7 @@ class PointCloudFusion : public rclcpp::Node {
    */
   double max_time_diff_sec_ = 0.05;  // 50 ms default window
   int64_t sync_queue_size_ = 3;      // queue size for synchronizer
-  OutputStampMode output_stamp_mode_ = OutputStampMode::Latest;
+  OutputStampMode output_stamp_mode_ = OutputStampMode::Earliest;
   std::string output_stamp_mode_param_ = "earliest";
 
   /**
