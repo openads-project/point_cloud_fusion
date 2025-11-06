@@ -1,6 +1,6 @@
 # point_cloud_fusion
 
-This package provides a node that fuses N input point clouds and publishes the fused point cloud. It uses a synchronization policy to ensure that the point clouds are processed in a timely manner. Also, the input point clouds are transformed to a target frame before fusion.
+This package provides the `point_cloud_fusion` node, which subscribes to multiple point-cloud topics, transforms all point clouds into a common target frame, and publishes a single fused point cloud.
 
 - [Container Images](#container-images)
 - [point_cloud_fusion](#point_cloud_fusion)
