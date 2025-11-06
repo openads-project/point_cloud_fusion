@@ -140,6 +140,7 @@ class PointCloudFusion : public rclcpp::Node {
    * @brief Target frame to which all input point clouds are transformed before fusion
    */
   std::string target_frame_ = "base_link";
+  std::vector<std::string> output_fields_;
 
   /**
    * @brief Configured input topics and transport hints

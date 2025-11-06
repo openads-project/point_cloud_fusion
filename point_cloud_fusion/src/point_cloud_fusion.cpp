@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -17,6 +18,30 @@
 #include <rclcpp_components/register_node_macro.hpp>
 RCLCPP_COMPONENTS_REGISTER_NODE(point_cloud_fusion::PointCloudFusion)
 
+namespace {
+
+inline std::size_t pointFieldDatatypeSize(uint8_t datatype) {
+  using sensor_msgs::msg::PointField;
+  switch (datatype) {
+    case PointField::INT8:
+    case PointField::UINT8:
+      return 1;
+    case PointField::INT16:
+    case PointField::UINT16:
+      return 2;
+    case PointField::INT32:
+    case PointField::UINT32:
+    case PointField::FLOAT32:
+      return 4;
+    case PointField::FLOAT64:
+      return 8;
+    default:
+      return 0;
+  }
+}
+
+}  // namespace
+
 
 namespace point_cloud_fusion {
 
@@ -26,6 +51,7 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
   this->declareAndLoadParameter("target_frame", target_frame_, "Target frame of fused point cloud", false, true);
   this->declareAndLoadParameter("input_topics", input_topics_, "List of input point cloud topics", false, true);
   this->declareAndLoadParameter("input_transport_hints", input_transport_hints_, "List of transport hints (one per input)", false);
+  this->declareAndLoadParameter("output_fields", output_fields_, "Fields to include in the fused output (empty publishes all fields)");
   this->declareAndLoadParameter("max_time_diff_sec", max_time_diff_sec_, "Max time diff for synchronization (seconds)");
   // run setup after constructor has finished to enable shared_from_this()
   setup_timer_ = this->create_wall_timer(std::chrono::milliseconds(1), [this]() {
@@ -446,6 +472,89 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   const auto &reference_fields = reference->fields;
   const bool is_bigendian = reference->is_bigendian;
 
+  struct FieldCopyPlan {
+    const sensor_msgs::msg::PointField *source;
+    sensor_msgs::msg::PointField destination;
+    std::size_t byte_length;
+  };
+
+  bool use_all_fields = output_fields_.empty();
+  std::vector<FieldCopyPlan> copy_plan;
+  std::vector<sensor_msgs::msg::PointField> fused_fields;
+  fused_fields.reserve(reference_fields.size());
+
+  std::size_t fused_point_step = point_step;
+  int fused_x_offset = x_offset;
+  int fused_y_offset = y_offset;
+  int fused_z_offset = z_offset;
+
+  if (!use_all_fields) {
+    bool selection_valid = true;
+    fused_point_step = 0;
+    fused_fields.clear();
+    copy_plan.reserve(output_fields_.size());
+
+    for (const auto &requested_name : output_fields_) {
+      auto iter = std::find_if(reference_fields.begin(), reference_fields.end(),
+                               [&requested_name](const sensor_msgs::msg::PointField &field) {
+                                 return field.name == requested_name;
+                               });
+      if (iter == reference_fields.end()) {
+        RCLCPP_WARN(this->get_logger(),
+                    "Requested output field '%s' not present in incoming point cloud; publishing full field set instead.",
+                    requested_name.c_str());
+        selection_valid = false;
+        break;
+      }
+
+      const std::size_t datatype_size = pointFieldDatatypeSize(iter->datatype);
+      if (datatype_size == 0) {
+        RCLCPP_WARN(this->get_logger(),
+                    "Point field '%s' uses unsupported datatype %u; publishing full field set instead.",
+                    requested_name.c_str(),
+                    static_cast<unsigned int>(iter->datatype));
+        selection_valid = false;
+        break;
+      }
+
+      FieldCopyPlan plan;
+      plan.source = &(*iter);
+      plan.destination = *iter;
+      plan.destination.offset = static_cast<uint32_t>(fused_point_step);
+      plan.byte_length = datatype_size * static_cast<std::size_t>(iter->count);
+      fused_point_step += plan.byte_length;
+
+      if (requested_name == "x") fused_x_offset = plan.destination.offset;
+      else if (requested_name == "y") fused_y_offset = plan.destination.offset;
+      else if (requested_name == "z") fused_z_offset = plan.destination.offset;
+
+      copy_plan.push_back(plan);
+      fused_fields.push_back(plan.destination);
+    }
+
+    if (!selection_valid || fused_x_offset < 0 || fused_y_offset < 0 || fused_z_offset < 0) {
+      if (selection_valid) {
+        RCLCPP_ERROR(this->get_logger(),
+                     "Output field selection must include x, y, and z; publishing full field set instead.");
+      }
+      use_all_fields = true;
+      copy_plan.clear();
+      fused_point_step = point_step;
+      fused_fields.assign(reference_fields.begin(), reference_fields.end());
+      fused_x_offset = x_offset;
+      fused_y_offset = y_offset;
+      fused_z_offset = z_offset;
+    }
+  }
+
+  if (use_all_fields) {
+    fused_fields.assign(reference_fields.begin(), reference_fields.end());
+    fused_point_step = point_step;
+    fused_x_offset = x_offset;
+    fused_y_offset = y_offset;
+    fused_z_offset = z_offset;
+  }
+
   // Reserve enough space once so the fusion loop only appends into a pre-sized buffer.
   const size_t max_capacity =
       std::accumulate(msgs.begin(), msgs.end(), static_cast<size_t>(0),
@@ -466,10 +575,10 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   output->header.stamp = timing.latest_stamp;
   output->height = 1;
   output->is_bigendian = is_bigendian;
-  output->point_step = point_step;
-  output->fields = reference_fields;
+  output->point_step = fused_point_step;
+  output->fields = fused_fields;
   output->is_dense = true;
-  output->data.resize(max_capacity * point_step);
+  output->data.resize(max_capacity * fused_point_step);
 
   uint8_t *dest_ptr = output->data.data();
   valid_point_count = 0;
@@ -489,11 +598,11 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     }
 
     // Cache the frame transform once per cloud to avoid repeated TF queries inside the point loop.
-    tf2::Transform tf_transform;
-    if (msg->header.frame_id == target_frame_) {
-      // Skip TF lookups when the cloud already matches the target frame.
-      tf_transform.setIdentity();
-    } else {
+    const bool apply_transform = msg->header.frame_id != target_frame_;
+    tf2::Vector3 translation;
+    tf2::Matrix3x3 rotation;
+    if (apply_transform) {
+      tf2::Transform tf_transform;
       geometry_msgs::msg::TransformStamped tf_stamped;
       try {
         tf_stamped = tf_buffer_->lookupTransform(
@@ -509,10 +618,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
         continue;
       }
       tf2::fromMsg(tf_stamped.transform, tf_transform);
+      translation = tf_transform.getOrigin();
+      rotation = tf_transform.getBasis();
     }
-
-    const tf2::Vector3 translation = tf_transform.getOrigin();
-    const tf2::Matrix3x3 rotation = tf_transform.getBasis();
 
     const auto *src_data = msg->data.data();
     const size_t num_points = static_cast<size_t>(msg->width) * static_cast<size_t>(msg->height);
@@ -528,19 +636,29 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
         continue;
       }
 
-      const tf2::Vector3 rotated = rotation * tf2::Vector3(x, y, z) + translation;
+      if (use_all_fields) {
+        std::memcpy(dest_ptr, point_ptr, point_step);
+      } else {
+        for (const auto &plan : copy_plan) {
+          std::memcpy(dest_ptr + plan.destination.offset,
+                      point_ptr + plan.source->offset,
+                      plan.byte_length);
+        }
+      }
 
-      std::memcpy(dest_ptr, point_ptr, point_step);
+      if (apply_transform) {
+        const tf2::Vector3 rotated = rotation * tf2::Vector3(x, y, z) + translation;
+        auto *dest_x = reinterpret_cast<float *>(dest_ptr + fused_x_offset);
+        auto *dest_y = reinterpret_cast<float *>(dest_ptr + fused_y_offset);
+        auto *dest_z = reinterpret_cast<float *>(dest_ptr + fused_z_offset);
+        *dest_x = static_cast<float>(rotated.x());
+        *dest_y = static_cast<float>(rotated.y());
+        *dest_z = static_cast<float>(rotated.z());
+      } else {
+        // XYZ already live in the target frame; copying the raw bytes is enough.
+      }
 
-      auto *dest_x = reinterpret_cast<float *>(dest_ptr + x_offset);
-      auto *dest_y = reinterpret_cast<float *>(dest_ptr + y_offset);
-      auto *dest_z = reinterpret_cast<float *>(dest_ptr + z_offset);
-
-      *dest_x = static_cast<float>(rotated.x());
-      *dest_y = static_cast<float>(rotated.y());
-      *dest_z = static_cast<float>(rotated.z());
-
-      dest_ptr += point_step;
+      dest_ptr += fused_point_step;
       ++valid_point_count;
     }
   }
@@ -555,7 +673,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
 
   output->width = valid_point_count;
   output->row_step = output->point_step * output->width;
-  output->data.resize(valid_point_count * point_step);
+  output->data.resize(valid_point_count * fused_point_step);
 
   output->is_dense = true;
   return output;
