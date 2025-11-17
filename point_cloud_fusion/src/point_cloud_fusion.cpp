@@ -86,17 +86,13 @@ void PointCloudFusion::declareAndLoadParameter(const std::string& name, T& param
   if (from_value.has_value() && to_value.has_value()) {
     if constexpr (std::is_integral_v<T>) {
       rcl_interfaces::msg::IntegerRange range;
-      T step = static_cast<T>(step_value.has_value() ? step_value.value() : 1);
-      range.set__from_value(static_cast<T>(from_value.value()))
-          .set__to_value(static_cast<T>(to_value.value()))
-          .set__step(step);
+      range.set__from_value(static_cast<T>(from_value.value())).set__to_value(static_cast<T>(to_value.value()));
+      if (step_value.has_value()) range.set__step(static_cast<T>(step_value.value()));
       param_desc.integer_range = {range};
     } else if constexpr (std::is_floating_point_v<T>) {
       rcl_interfaces::msg::FloatingPointRange range;
-      T step = static_cast<T>(step_value.has_value() ? step_value.value() : 1.0);
-      range.set__from_value(static_cast<T>(from_value.value()))
-          .set__to_value(static_cast<T>(to_value.value()))
-          .set__step(step);
+      range.set__from_value(static_cast<T>(from_value.value())).set__to_value(static_cast<T>(to_value.value()));
+      if (step_value.has_value()) range.set__step(static_cast<T>(step_value.value()));
       param_desc.floating_point_range = {range};
     } else {
       RCLCPP_WARN(this->get_logger(), "Parameter type of parameter '%s' does not support specifying a range",
@@ -133,7 +129,7 @@ void PointCloudFusion::declareAndLoadParameter(const std::string& name, T& param
         ss << param;
       }
       RCLCPP_WARN_STREAM(this->get_logger(), ss.str());
-      this->set_parameters(std::vector<rclcpp::Parameter>{rclcpp::Parameter(name, rclcpp::ParameterValue(param))});
+      this->set_parameters({rclcpp::Parameter(name, rclcpp::ParameterValue(param))});
     }
   }
 
