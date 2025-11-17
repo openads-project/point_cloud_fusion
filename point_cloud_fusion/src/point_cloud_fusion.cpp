@@ -2,9 +2,12 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <numeric>
+#include <sstream>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -45,22 +48,62 @@ inline std::size_t pointFieldDatatypeSize(uint8_t datatype) {
 
 namespace point_cloud_fusion {
 
+// clang-format off
 PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("point_cloud_fusion", options) {
-  this->declareAndLoadParameter("target_frame", target_frame_, "Target frame of fused point cloud", false, true);
-  this->declareAndLoadParameter("input_topics", input_topics_, "List of input point cloud topics", false, true);
-  this->declareAndLoadParameter("input_transport_hints", input_transport_hints_,
-                                "List of transport hints (one per input)", false);
-  this->declareAndLoadParameter("sync_queue_size", sync_queue_size_, "Queue size for message_filters synchronizer",
-                                false);
-  this->declareAndLoadParameter("output_fields", output_fields_,
-                                "Fields to include in the fused output (empty publishes all fields)");
-  this->declareAndLoadParameter("output_stamp_mode", output_stamp_mode_param_,
-                                "Timestamp to assign to fused cloud (latest, earliest, mean, reference)", false);
-  this->declareAndLoadParameter("max_time_diff_sec", max_time_diff_sec_, "Max time diff for synchronization (seconds)");
-  if (sync_queue_size_ <= 0) {
-    RCLCPP_WARN(this->get_logger(), "sync_queue_size must be positive; forcing to 1 to keep synchronizer alive.");
-    sync_queue_size_ = 1;
-  }
+  this->declareAndLoadParameter("target_frame", target_frame_,                   // name
+                                "Target frame of fused point cloud",             // description
+                                false,                                           // add_to_auto_reconfigurable_params
+                                true,                                            // is_required
+                                true,                                            // read_only
+                                std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
+                                "Must be set.");                                 // additional_constraints
+  this->declareAndLoadParameter("input_topics", input_topics_,                   // name
+                                "List of input point cloud topics",              // description
+                                false,                                           // add_to_auto_reconfigurable_params
+                                true,                                            // is_required
+                                true,                                            // read_only
+                                std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
+                                "Must configure between 1 and " + std::to_string(kMaxInputTopics) + " topics");
+  validateInputTopicsParameter();
+  this->declareAndLoadParameter("input_transport_hints", input_transport_hints_, // name
+                                "List of transport hints (one per input)",       // description
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true,                                           // read_only
+                                std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
+                                "Length must be zero or match input_topics; unspecified entries default to '" +
+                                    std::string(kDefaultTransportHint) + "'.");  // additional_constraints
+  this->declareAndLoadParameter("sync_queue_size", sync_queue_size_,             // name
+                                "Queue size for message_filters synchronizer",   // description
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true,                                            // read_only
+                                static_cast<double>(kMinSyncQueueSize),          // from_value
+                                static_cast<double>(std::numeric_limits<int64_t>::max()),  // to_value
+                                std::nullopt,                                              // step_value
+                                std::string("Must be >= ") + std::to_string(kMinSyncQueueSize));  // additional_constraints
+  this->declareAndLoadParameter(
+      "output_fields", output_fields_,                                           // name
+      "Fields to include in the fused output (empty publishes all fields)",      // description
+      true,                                                                      // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      false,                                                                     // read_only
+      std::nullopt, std::nullopt, std::nullopt,                                  // from_value, to_value, step_value
+      "Typical fields include: x, y, z, intensity, t, reflectivity, ring, ambient, range.");  // additional_constraints
+  this->declareAndLoadParameter("output_stamp_mode", output_stamp_mode_param_,   // name
+                                std::string("Timestamp to assign to fused cloud (") + kAllowedOutputStampModes + ")",
+                                true,                                            // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                false,                                           // read_only
+                                std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
+                                std::string("Allowed values: ") + kAllowedOutputStampModes); // additional_constraints
+  this->declareAndLoadParameter("max_time_diff_sec", max_time_diff_sec_,         // name
+                                "Max time diff for synchronization (seconds)",   // description
+                                true,                                            // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                false,                                           // read_only
+                                0.0, std::nullopt, std::nullopt,                 // from_value, to_value, step_value
+                                "Must be non-negative");                         // additional_constraints
   configureOutputStampMode(output_stamp_mode_param_);
   // run setup after constructor has finished to enable shared_from_this()
   setup_timer_ = this->create_wall_timer(std::chrono::milliseconds(1), [this]() {
@@ -68,6 +111,7 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
     setup_timer_->cancel();
   });
 }
+// clang-format on
 
 template <typename T>
 void PointCloudFusion::declareAndLoadParameter(const std::string& name, T& param, const std::string& description,
@@ -236,20 +280,11 @@ void PointCloudFusion::setup() {
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
   // validate inputs
-  if (input_topics_.empty()) {
-    RCLCPP_FATAL(this->get_logger(), "No input topics configured (parameter 'input_topics'). Exiting");
-    exit(EXIT_FAILURE);
-  }
-  if (input_topics_.size() > 9) {
-    RCLCPP_FATAL(this->get_logger(), "Configured with %zu input topics, but only up to 9 inputs are supported",
-                 input_topics_.size());
-    exit(EXIT_FAILURE);
-  }
   if (!input_transport_hints_.empty() && input_transport_hints_.size() != input_topics_.size()) {
-    RCLCPP_WARN(
-        this->get_logger(),
-        "'input_transport_hints' length (%zu) does not match 'input_topics' (%zu). Missing hints default to 'raw'",
-        input_transport_hints_.size(), input_topics_.size());
+    RCLCPP_WARN(this->get_logger(),
+                "'input_transport_hints' length (%zu) does not match 'input_topics' (%zu). Missing hints default to "
+                "'%s'",
+                input_transport_hints_.size(), input_topics_.size(), kDefaultTransportHint);
   }
 
   // create subscribers
@@ -260,7 +295,7 @@ void PointCloudFusion::setup() {
     const std::string resolved = this->get_node_topics_interface()->resolve_topic_name(configured);
     const std::string hint = (i < input_transport_hints_.size() && !input_transport_hints_[i].empty())
                                  ? input_transport_hints_[i]
-                                 : std::string("raw");
+                                 : std::string(kDefaultTransportHint);
 
     auto subscriber = std::make_shared<point_cloud_transport::SubscriberFilter>();
     subscriber->subscribe(this->shared_from_this(), resolved, hint);
@@ -716,8 +751,20 @@ void PointCloudFusion::configureOutputStampMode(const std::string& mode) {
   } else if (lowered == "latest") {
     output_stamp_mode_ = OutputStampMode::Latest;
   } else {
-    RCLCPP_WARN(this->get_logger(), "Invalid output_stamp_mode '%s'; defaulting to 'latest'.", mode.c_str());
-    output_stamp_mode_ = OutputStampMode::Latest;
+    RCLCPP_WARN(this->get_logger(), "Invalid output_stamp_mode '%s'; defaulting to 'earliest'.", mode.c_str());
+    output_stamp_mode_ = OutputStampMode::Earliest;
+  }
+}
+
+void PointCloudFusion::validateInputTopicsParameter() const {
+  if (input_topics_.empty()) {
+    RCLCPP_FATAL(this->get_logger(), "No input topics configured (parameter 'input_topics'). Exiting");
+    exit(EXIT_FAILURE);
+  }
+  if (input_topics_.size() > kMaxInputTopics) {
+    RCLCPP_FATAL(this->get_logger(), "Configured with %zu input topics, but only up to %zu inputs are supported",
+                 input_topics_.size(), kMaxInputTopics);
+    exit(EXIT_FAILURE);
   }
 }
 
