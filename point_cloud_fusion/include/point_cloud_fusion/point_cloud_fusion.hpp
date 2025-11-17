@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -105,6 +106,24 @@ class PointCloudFusion : public rclcpp::Node {
   enum class OutputStampMode { Latest, Earliest, Mean, Reference };
 
   void configureOutputStampMode(const std::string& mode);
+  void validateInputTopicsParameter() const;
+
+  static constexpr int64_t kMinSyncQueueSize = 1;
+  static constexpr std::size_t kMaxInputTopics = 9;
+  static constexpr const char* kDefaultTransportHint = "raw";
+  static constexpr const char* kAllowedOutputStampModes = "latest, earliest, mean, reference";
+
+  /**
+   * @brief ROS parameters
+   */
+  double max_time_diff_sec_ = 0.05;  // 50 ms default window
+  int64_t sync_queue_size_ = 3;      // queue size for synchronizer
+  OutputStampMode output_stamp_mode_ = OutputStampMode::Earliest;
+  std::string output_stamp_mode_param_ = "earliest";
+  std::string target_frame_ = "base_link";
+  std::vector<std::string> output_fields_;
+  std::vector<std::string> input_topics_;
+  std::vector<std::string> input_transport_hints_;
 
   /**
    * @brief Auto-reconfigurable parameters for dynamic reconfiguration
@@ -120,30 +139,10 @@ class PointCloudFusion : public rclcpp::Node {
   std::shared_ptr<point_cloud_transport::Publisher> cloud_publisher_;
 
   /**
-   * @brief Synchronization parameters
-   */
-  double max_time_diff_sec_ = 0.05;  // 50 ms default window
-  int64_t sync_queue_size_ = 3;      // queue size for synchronizer
-  OutputStampMode output_stamp_mode_ = OutputStampMode::Earliest;
-  std::string output_stamp_mode_param_ = "earliest";
-
-  /**
    * @brief TF2 buffer and transform listener
    */
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
-
-  /**
-   * @brief Target frame to which all input point clouds are transformed before fusion
-   */
-  std::string target_frame_ = "base_link";
-  std::vector<std::string> output_fields_;
-
-  /**
-   * @brief Configured input topics and transport hints
-   */
-  std::vector<std::string> input_topics_;
-  std::vector<std::string> input_transport_hints_;
 
   /**
    * @brief Timer to delay setup
