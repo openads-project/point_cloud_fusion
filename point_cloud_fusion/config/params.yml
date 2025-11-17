@@ -1,10 +1,35 @@
 /**/*:
   ros__parameters:
     target_frame: base_link
+    input_topics:
+     - "~/input1"
+     - "~/input2"
+    input_transport_hints:
+     - "raw"
+     - "raw"
+     
+    sync_queue_size: 3 # Queue depth for approximate time synchronization
+    max_time_diff_sec: 0.05 # Maximum allowed timestamp difference (seconds) across inputs
+
+    # output_fields: # Determine which fields to include in the output point cloud (all if commented out)
+    #   - "x"
+    #   - "y"
+    #   - "z"
+    #   - "intensity"
+    #   - "t"
+    #   - "reflectivity"
+    #   - "ring"
+    #   - "ambient"
+    #   - "range"
+
+    # Output timestamp mode:
+    #   latest     -> stamp of the newest cloud in the batch 
+    #   earliest   -> earliest cloud stamp (default)
+    #   mean       -> midpoint between earliest and latest
+    #   reference  -> stamp of the first cloud received by the synchronizer
+    # output_stamp_mode: "earliest"
 
     # --- point_cloud_transport parameters -----
-    # point_cloud_transport1: raw # transport hint for subscription 1
-    # point_cloud_transport2: raw # transport hint for subscription 2
     # point_cloud_fusion.output.enable_pub_plugins:
     #   - point_cloud_transport/cloudini
     #   - point_cloud_transport/draco

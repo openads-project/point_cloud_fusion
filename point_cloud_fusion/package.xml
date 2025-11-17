@@ -6,8 +6,10 @@
   <version>0.0.0</version>
   <description>TODO</description>
 
-  <maintainer email="lukas.zanger@ika.rwth-aachen.de">Lukas Zanger</maintainer>
-  <author email="lukas.zanger@ika.rwth-aachen.de">Lukas Zanger</author>
+  <maintainer email="bastian.lampe@rwth-aachen.de">Bastian Lampe</maintainer>
+  <author email="lukas.zanger@rwth-aachen.de">Lukas Zanger</author>
+  <author email="bastian.lampe@rwth-aachen.de">Bastian Lampe</author>
+  <author email="jean-pierre.busch@rwth-aachen.de">Jean-Pierre Busch</author>
 
   <license>TODO</license>
 
