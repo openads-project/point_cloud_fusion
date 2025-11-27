@@ -79,8 +79,8 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 false,                                           // is_required
                                 false,                                            // read_only
                                 static_cast<double>(kMinSyncQueueSize),          // from_value
-                                static_cast<double>(std::numeric_limits<int64_t>::max()),  // to_value
-                                std::nullopt,                                              // step_value
+                                static_cast<double>(std::numeric_limits<int32_t>::max()),  // to_value
+                                static_cast<double>(1),                          // step_value
                                 std::string("Must be >= ") + std::to_string(kMinSyncQueueSize));  // additional_constraints
   this->declareAndLoadParameter(
       "output_fields", output_fields_,                                           // name
