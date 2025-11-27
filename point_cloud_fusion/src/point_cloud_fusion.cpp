@@ -54,14 +54,14 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 "Target frame of fused point cloud",             // description
                                 false,                                           // add_to_auto_reconfigurable_params
                                 true,                                            // is_required
-                                true,                                            // read_only
+                                false,                                            // read_only
                                 std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
                                 "Must be set.");                                 // additional_constraints
   this->declareAndLoadParameter("input_topics", input_topics_,                   // name
                                 "List of input point cloud topics",              // description
                                 false,                                           // add_to_auto_reconfigurable_params
                                 true,                                            // is_required
-                                true,                                            // read_only
+                                false,                                            // read_only
                                 std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
                                 "Must configure between 1 and " + std::to_string(kMaxInputTopics) + " topics");
   validateInputTopicsParameter();
@@ -69,7 +69,7 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 "List of transport hints (one per input)",       // description
                                 false,                                           // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
-                                true,                                           // read_only
+                                false,                                           // read_only
                                 std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
                                 "Length must be zero or match input_topics; unspecified entries default to '" +
                                     std::string(kDefaultTransportHint) + "'.");  // additional_constraints
@@ -77,7 +77,7 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 "Queue size for message_filters synchronizer",   // description
                                 false,                                           // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
-                                true,                                            // read_only
+                                false,                                            // read_only
                                 static_cast<double>(kMinSyncQueueSize),          // from_value
                                 static_cast<double>(std::numeric_limits<int64_t>::max()),  // to_value
                                 std::nullopt,                                              // step_value
