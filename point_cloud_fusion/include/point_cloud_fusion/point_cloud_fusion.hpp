@@ -63,6 +63,9 @@ class PointCloudFusion : public rclcpp::Node {
                                const std::optional<double>& to_value = std::nullopt,
                                const std::optional<double>& step_value = std::nullopt,
                                const std::string& additional_constraints = "");
+
+  rcl_interfaces::msg::SetParametersResult parametersCallback(const std::vector<rclcpp::Parameter>& parameters);
+
   /**
    * @brief Sets up subscribers, publishers, etc. to configure the node
    */
@@ -108,7 +111,9 @@ class PointCloudFusion : public rclcpp::Node {
   void configureOutputStampMode(const std::string& mode);
   void validateInputTopicsParameter() const;
 
-  static constexpr int64_t kMinSyncQueueSize = 1;
+  static constexpr int32_t kMinSyncQueueSize = 1;
+  static constexpr int32_t kMaxSyncQueueSize = 1000;
+  static constexpr int32_t kStepSizeSyncQueueSize = 1;
   static constexpr std::size_t kMaxInputTopics = 9;
   static constexpr const char* kDefaultTransportHint = "raw";
   static constexpr const char* kAllowedOutputStampModes = "latest, earliest, mean, reference";
@@ -132,6 +137,11 @@ class PointCloudFusion : public rclcpp::Node {
 
   std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>> cloud_subscribers_;
   std::shared_ptr<void> synchronizer_;
+
+  /**
+   * @brief Callback handle for dynamic parameter reconfiguration
+   */
+  OnSetParametersCallbackHandle::SharedPtr parameters_callback_;
 
   /**
    * @brief Publisher

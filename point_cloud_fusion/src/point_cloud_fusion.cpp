@@ -69,7 +69,7 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 "List of transport hints (one per input)",       // description
                                 false,                                           // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
-                                true,                                           // read_only
+                                true,                                            // read_only
                                 std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
                                 "Length must be zero or match input_topics; unspecified entries default to '" +
                                     std::string(kDefaultTransportHint) + "'.");  // additional_constraints
@@ -78,9 +78,9 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 false,                                           // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
                                 true,                                            // read_only
-                                static_cast<double>(kMinSyncQueueSize),          // from_value
-                                static_cast<double>(std::numeric_limits<int64_t>::max()),  // to_value
-                                std::nullopt,                                              // step_value
+                                kMinSyncQueueSize,                               // from_value
+                                kMaxSyncQueueSize,                               // to_value
+                                kStepSizeSyncQueueSize,                          // step_value
                                 std::string("Must be >= ") + std::to_string(kMinSyncQueueSize));  // additional_constraints
   this->declareAndLoadParameter(
       "output_fields", output_fields_,                                           // name
@@ -92,16 +92,16 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
       "Typical fields include: x, y, z, intensity, t, reflectivity, ring, ambient, range.");  // additional_constraints
   this->declareAndLoadParameter("output_stamp_mode", output_stamp_mode_param_,   // name
                                 std::string("Timestamp to assign to fused cloud (") + kAllowedOutputStampModes + ")",
-                                true,                                            // add_to_auto_reconfigurable_params
+                                false,                                           // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
-                                false,                                           // read_only
+                                true,                                            // read_only
                                 std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
                                 std::string("Allowed values: ") + kAllowedOutputStampModes); // additional_constraints
   this->declareAndLoadParameter("max_time_diff_sec", max_time_diff_sec_,         // name
                                 "Max time diff for synchronization (seconds)",   // description
-                                true,                                            // add_to_auto_reconfigurable_params
+                                false,                                           // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
-                                false,                                           // read_only
+                                true,                                            // read_only
                                 0.0, std::nullopt, std::nullopt,                 // from_value, to_value, step_value
                                 "Must be non-negative");                         // additional_constraints
   configureOutputStampMode(output_stamp_mode_param_);
@@ -183,6 +183,24 @@ void PointCloudFusion::declareAndLoadParameter(const std::string& name, T& param
     };
     auto_reconfigurable_params_.push_back(std::make_tuple(name, setter));
   }
+}
+
+rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(const std::vector<rclcpp::Parameter>& parameters) {
+
+  for (const auto& param : parameters) {
+    for (auto& auto_reconfigurable_param : auto_reconfigurable_params_) {
+      if (param.get_name() == std::get<0>(auto_reconfigurable_param)) {
+        std::get<1>(auto_reconfigurable_param)(param);
+        RCLCPP_INFO(this->get_logger(), "Reconfigured parameter '%s' to: %s", param.get_name().c_str(), param.value_to_string().c_str());
+        break;
+      }
+    }
+  }
+
+  rcl_interfaces::msg::SetParametersResult result;
+  result.successful = true;
+
+  return result;
 }
 
 namespace detail {
@@ -275,6 +293,10 @@ void connectInputs(SyncType<N>& sync,
 }  // namespace detail
 
 void PointCloudFusion::setup() {
+
+  // callback for dynamic parameter configuration
+  parameters_callback_ = this->add_on_set_parameters_callback(std::bind(&PointCloudFusion::parametersCallback, this, std::placeholders::_1));
+
   // create transform buffer and listener
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
