@@ -2,4 +2,4 @@ repositories:
   cloudini:
     type: git
     url: https://github.com/facontidavide/cloudini.git
-    version: 0.6.1
+    version: 0.11.1
