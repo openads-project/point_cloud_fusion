@@ -15,6 +15,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_sensor_msgs REQUIRED)
+find_package(tracetools REQUIRED)
 
 set(TARGET_NAME point_cloud_fusion_component)
 
@@ -41,6 +42,7 @@ ament_target_dependencies(${TARGET_NAME}
   tf2
   tf2_ros
   tf2_sensor_msgs
+  tracetools
 )
 
 install(TARGETS ${TARGET_NAME}
