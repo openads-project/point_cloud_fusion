@@ -18,6 +18,7 @@
 #include <tf2/time.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
+#include <tracetools/tracetools.h>
 
 #include <rclcpp_components/register_node_macro.hpp>
 RCLCPP_COMPONENTS_REGISTER_NODE(point_cloud_fusion::PointCloudFusion)
@@ -374,6 +375,23 @@ void PointCloudFusion::setup() {
   std::string output_topic_name = this->get_node_topics_interface()->resolve_topic_name("~/output");
   cloud_publisher_ = std::make_shared<point_cloud_transport::Publisher>(pct.advertise(output_topic_name, 10));
   RCLCPP_INFO(this->get_logger(), "Publishing to '%s'", cloud_publisher_->getTopic().c_str());
+
+  // Annotate message links for tracing: Each publisher (for raw and compressed point clouds) depends an all input point clouds.
+  std::vector<const void *> link_subs;
+  std::vector<const void *> link_pubs;
+  for (const auto& sub_filter : cloud_subscribers_) {
+    auto sub_base = sub_filter->getSubscriber().getSubscription();
+    if (sub_base) {
+      link_subs.push_back(static_cast<const void *>(sub_base->get_subscription_handle().get()));
+    }
+  }
+  if (cloud_publisher_) {
+    std::map<std::string, rclcpp::PublisherBase::SharedPtr> pubs_base = cloud_publisher_->getPublishers();
+    for(const auto& [transport, pub_base] : pubs_base) {
+      link_pubs.push_back(static_cast<const void *>(pub_base->get_publisher_handle().get()));
+    }
+  }
+  TRACETOOLS_TRACEPOINT(message_link_partial_sync, link_subs.data(), link_subs.size(), link_pubs.data(), link_pubs.size());
 }
 
 template <std::size_t N>
