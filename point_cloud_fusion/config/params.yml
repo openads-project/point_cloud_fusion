@@ -2,32 +2,25 @@
   ros__parameters:
     target_frame: base_link
     input_topics:
-     - "~/input1"
-     - "~/input2"
+      - "~/input1"
+      - "~/input2"
     input_transport_hints:
-     - "raw"
-     - "raw"
+      - "raw"
+      - "raw"
      
     sync_queue_size: 3 # Queue depth for approximate time synchronization
     max_time_diff_sec: 0.05 # Maximum allowed timestamp difference (seconds) across inputs
-
-    # output_fields: # Determine which fields to include in the output point cloud (all if commented out)
+    output_queue_size: 10 # Queue depth for fused output publisher
+    age_penalty: 0.1 # Optional ApproximateTime tuning
+    use_cuda: true # Enable CUDA acceleration (requires CUDA build)
+    fixed_points_per_input_cloud: 0 # 0=disabled
+    # output_fields: # Determine which fields to include in the output point cloud (all if not set)
     #   - "x"
     #   - "y"
     #   - "z"
     #   - "intensity"
-    #   - "t"
-    #   - "reflectivity"
-    #   - "ring"
-    #   - "ambient"
-    #   - "range"
-
-    # Output timestamp mode:
-    #   latest     -> stamp of the newest cloud in the batch 
-    #   earliest   -> earliest cloud stamp (default)
-    #   mean       -> midpoint between earliest and latest
-    #   reference  -> stamp of the first cloud received by the synchronizer
-    # output_stamp_mode: "earliest"
+    #   - ...
+    output_stamp_mode: "earliest"
 
     # --- point_cloud_transport parameters -----
     # point_cloud_fusion.output.enable_pub_plugins:
@@ -36,7 +29,7 @@
     #   - point_cloud_transport/raw
     #   - point_cloud_transport/zlib
     #   - point_cloud_transport/zstd
-    # point_cloud_fusion.output.cloudini.clodini_resolution: 0.001
+    # point_cloud_fusion.output.cloudini.cloudini_resolution: 0.001
     # point_cloud_fusion.output.draco.attribute_mapping.attribute_type.x: POSITION
     # point_cloud_fusion.output.draco.attribute_mapping.attribute_type.y: POSITION
     # point_cloud_fusion.output.draco.attribute_mapping.attribute_type.z: POSITION

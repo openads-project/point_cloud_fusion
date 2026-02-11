@@ -20,6 +20,10 @@
 #include <rclcpp/rclcpp.hpp>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
+#ifdef ENABLE_CUDA
+#include <point_cloud_fusion/point_cloud_fusion_cuda.hpp>
+#endif
+
 namespace point_cloud_fusion {
 
 template <typename C>
@@ -87,12 +91,12 @@ class PointCloudFusion : public rclcpp::Node {
     FusionTiming()
         : earliest_stamp(rclcpp::Time()),
           latest_stamp(rclcpp::Time()),
-          reference_stamp(rclcpp::Time()),
-          max_dt_sec(0.0) {}
+          input0_stamp(rclcpp::Time()),
+          max_dt_from_input0_sec(0.0) {}
     rclcpp::Time earliest_stamp;
     rclcpp::Time latest_stamp;
-    rclcpp::Time reference_stamp;
-    double max_dt_sec;
+    rclcpp::Time input0_stamp;
+    double max_dt_from_input0_sec;
   };
 
   bool collectTimingInfo(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs, FusionTiming& timing) const;
@@ -100,13 +104,18 @@ class PointCloudFusion : public rclcpp::Node {
   PointCloudMsg::UniquePtr fusePointCloudBatch(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
                                                const FusionTiming& timing, std::size_t& valid_point_count) const;
 
+#ifdef ENABLE_CUDA
+  PointCloudMsg::UniquePtr fusePointCloudBatchCUDA(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
+                                                   const FusionTiming& timing, std::size_t& valid_point_count) const;
+#endif
+
   void publishFusedCloud(PointCloudMsg::UniquePtr cloud, const FusionTiming& timing, std::size_t input_count,
                          std::size_t total_points, std::chrono::steady_clock::time_point callback_start,
-                         std::chrono::steady_clock::time_point transform_start,
-                         std::chrono::steady_clock::time_point processing_end);
+                         std::chrono::steady_clock::time_point processing_start,
+                         std::chrono::steady_clock::time_point processing_end, const char* event_name);
 
  private:
-  enum class OutputStampMode { Latest, Earliest, Mean, Reference };
+  enum class OutputStampMode { Latest, Earliest, Mean, Input0 };
 
   void configureOutputStampMode(const std::string& mode);
   void validateInputTopicsParameter() const;
@@ -114,21 +123,30 @@ class PointCloudFusion : public rclcpp::Node {
   static constexpr int32_t kMinSyncQueueSize = 1;
   static constexpr int32_t kMaxSyncQueueSize = 1000;
   static constexpr int32_t kStepSizeSyncQueueSize = 1;
+  static constexpr int32_t kMinOutputQueueSize = 1;
+  static constexpr int32_t kMaxOutputQueueSize = 1000;
+  static constexpr int32_t kStepSizeOutputQueueSize = 1;
   static constexpr std::size_t kMaxInputTopics = 9;
   static constexpr const char* kDefaultTransportHint = "raw";
-  static constexpr const char* kAllowedOutputStampModes = "latest, earliest, mean, reference";
+  static constexpr const char* kAllowedOutputStampModes = "latest, earliest, mean, input0";
 
   /**
    * @brief ROS parameters
    */
   double max_time_diff_sec_ = 0.05;  // 50 ms default window
+  double age_penalty_ = 0.1;         // Matches message_filters::ApproximateTime default
   int64_t sync_queue_size_ = 3;      // queue size for synchronizer
+  int64_t output_queue_size_ = 10;   // queue size for output publisher
+  // Optional: limit each input cloud to this many points before processing.
+  // 0 = disabled (use actual point count per cloud)
+  int64_t fixed_points_per_input_cloud_ = 0;
+  bool use_cuda_ = true;
   OutputStampMode output_stamp_mode_ = OutputStampMode::Earliest;
   std::string output_stamp_mode_param_ = "earliest";
   std::string target_frame_ = "base_link";
-  std::vector<std::string> output_fields_;
+  std::vector<std::string> output_fields_ = {};
   std::vector<std::string> input_topics_;
-  std::vector<std::string> input_transport_hints_;
+  std::vector<std::string> input_transport_hints_ = {};
 
   /**
    * @brief Auto-reconfigurable parameters for dynamic reconfiguration
@@ -158,6 +176,13 @@ class PointCloudFusion : public rclcpp::Node {
    * @brief Timer to delay setup
    */
   rclcpp::TimerBase::SharedPtr setup_timer_;
+
+#ifdef ENABLE_CUDA
+  /**
+   * @brief CUDA context for GPU acceleration
+   */
+  std::unique_ptr<cuda::CudaTransformContext> cuda_context_;
+#endif
 };
 
 }  // namespace point_cloud_fusion
