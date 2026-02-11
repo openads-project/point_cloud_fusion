@@ -4,8 +4,92 @@ include:
 variables:
   PLATFORM: amd64,arm64
   TARGET: dev,run
-  ENABLE_SLIM: 'false'
   BASE_IMAGE: rwthika/ros2:jazzy
   ENABLE_RECURSIVE_VCS_IMPORT: 'false'
   RMW_IMPLEMENTATION: rmw_zenoh_cpp
   COMMAND: ros2 launch point_cloud_fusion point_cloud_fusion.launch.py
+  CMAKE_ARGS: "-DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DREQUIRE_CUDA=ON"
+
+  SLIM_BUILD_ARGS: >
+    --sensor-ipc-mode=proxy
+    --continue-after=30
+    --show-clogs
+    --http-probe=false
+    --include-path /opt/ros
+    --include-path /usr/local/cuda-12.8/lib64/libcudart.so
+    --include-path /usr/local/cuda-12.8/lib64/libcudart.so.12
+    --include-path /usr/local/cuda-12.8/lib64/libcudart.so.12.8.90
+    --include-path /home
+    --include-path /docker-ros/ws
+    --include-path /root/.bashrc
+    --include-path /usr/sbin
+    --include-path /usr/sbin/groupadd
+    --include-path /usr/sbin/useradd
+    --include-path /usr/bin/getent
+    --include-path /usr/bin/openssl
+    --include-path /usr/sbin/gosu
+    --include-path /usr/bin/touch
+    --include-path /bin/cp
+    --include-path /bin/ln
+    --include-path /bin/chown
+    --include-path /usr/bin/cut
+    --include-path /etc/nsswitch.conf
+    --include-path /etc/group
+    --include-path /etc/gshadow
+    --include-path /etc/passwd
+    --include-path /etc/shadow
+    --include-path /etc/login.defs
+    --include-path /etc/default/useradd
+    --include-path /lib64/ld-linux-x86-64.so.2
+    --include-path /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+    --include-path /lib/x86_64-linux-gnu/libc.so.6
+    --include-path /usr/lib/x86_64-linux-gnu/libc.so.6
+    --include-path /lib/x86_64-linux-gnu/libaudit.so.1
+    --include-path /lib/x86_64-linux-gnu/libaudit.so.1.0.0
+    --include-path /usr/lib/x86_64-linux-gnu/libaudit.so.1
+    --include-path /usr/lib/x86_64-linux-gnu/libaudit.so.1.0.0
+    --include-path /etc/ld.so.conf
+    --include-path /etc/ld.so.conf.d
+    --include-path /etc/ld.so.cache
+    --include-path /lib/x86_64-linux-gnu/libselinux.so.1
+    --include-path /usr/lib/x86_64-linux-gnu/libselinux.so.1
+    --include-path /lib/x86_64-linux-gnu/libsemanage.so.2
+    --include-path /usr/lib/x86_64-linux-gnu/libsemanage.so.2
+    --include-path /lib/x86_64-linux-gnu/libsepol.so.2
+    --include-path /usr/lib/x86_64-linux-gnu/libsepol.so.2
+    --include-path /lib/x86_64-linux-gnu/libcap-ng.so.0
+    --include-path /lib/x86_64-linux-gnu/libcap-ng.so.0.0.0
+    --include-path /usr/lib/x86_64-linux-gnu/libcap-ng.so.0
+    --include-path /usr/lib/x86_64-linux-gnu/libcap-ng.so.0.0.0
+    --include-path /lib/x86_64-linux-gnu/libpcre2-8.so.0
+    --include-path /lib/x86_64-linux-gnu/libpcre2-8.so.0.11.2
+    --include-path /usr/lib/x86_64-linux-gnu/libpcre2-8.so.0
+    --include-path /usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.11.2
+    --include-path /lib/x86_64-linux-gnu/libbz2.so.1.0
+    --include-path /usr/lib/x86_64-linux-gnu/libbz2.so.1.0
+    --include-path /usr/lib/x86_64-linux-gnu/libbz2.so.1.0.4
+    --include-path /lib/x86_64-linux-gnu/libacl.so.1
+    --include-path /usr/lib/x86_64-linux-gnu/libacl.so.1
+    --include-path /usr/lib/x86_64-linux-gnu/libacl.so.1.1.2302
+    --include-path /lib/x86_64-linux-gnu/libattr.so.1
+    --include-path /usr/lib/x86_64-linux-gnu/libattr.so.1
+    --include-path /usr/lib/x86_64-linux-gnu/libattr.so.1.1.2502
+    --include-path /lib/x86_64-linux-gnu/libssl.so.3
+    --include-path /usr/lib/x86_64-linux-gnu/libssl.so.3
+    --include-path /lib/x86_64-linux-gnu/libcrypto.so.3
+    --include-path /usr/lib/x86_64-linux-gnu/libcrypto.so.3
+    --include-path /lib/x86_64-linux-gnu/libdl.so.2
+    --include-path /usr/lib/x86_64-linux-gnu/libdl.so.2
+    --include-path /lib/x86_64-linux-gnu/libm.so.6
+    --include-path /usr/lib/x86_64-linux-gnu/libm.so.6
+    --include-path /lib/x86_64-linux-gnu/libpthread.so.0
+    --include-path /usr/lib/x86_64-linux-gnu/libpthread.so.0
+    --include-path /lib/x86_64-linux-gnu/librt.so.1
+    --include-path /usr/lib/x86_64-linux-gnu/librt.so.1
+    --include-path /lib/x86_64-linux-gnu/libcap.so.2
+    --include-path /usr/lib/x86_64-linux-gnu/libcap.so.2
+    --include-path /usr/lib/x86_64-linux-gnu/libcap.so.2.66
+    --include-path /usr/lib/x86_64-linux-gnu/libnss_files.so.2
+    --include-path /usr/lib/x86_64-linux-gnu/libnss_dns.so.2
+    --include-path /usr/lib/x86_64-linux-gnu/libnss_systemd.so.2
+    --include-path /usr/lib/x86_64-linux-gnu/libresolv.so.2
