@@ -105,6 +105,7 @@ endif()
 rclcpp_components_register_node(${TARGET_NAME}
   PLUGIN "point_cloud_fusion::PointCloudFusion"
   EXECUTABLE point_cloud_fusion
+  EXECUTOR "MultiThreadedExecutor"
 )
 
 target_include_directories(${TARGET_NAME} PUBLIC

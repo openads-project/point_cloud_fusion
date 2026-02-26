@@ -154,6 +154,7 @@ class PointCloudFusion : public rclcpp::Node {
   std::vector<std::tuple<std::string, std::function<void(const rclcpp::Parameter&)>>> auto_reconfigurable_params_;
 
   std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>> cloud_subscribers_;
+  std::vector<rclcpp::CallbackGroup::SharedPtr> cloud_subscriber_callback_groups_;
   std::shared_ptr<void> synchronizer_;
 
   /**

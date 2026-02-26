@@ -21,6 +21,7 @@
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
 #include <rclcpp_components/register_node_macro.hpp>
+#include <rmw/qos_profiles.h>
 RCLCPP_COMPONENTS_REGISTER_NODE(point_cloud_fusion::PointCloudFusion)
 
 namespace {
@@ -364,7 +365,9 @@ void PointCloudFusion::setup() {
 
   // create subscribers
   cloud_subscribers_.clear();
+  cloud_subscriber_callback_groups_.clear();
   cloud_subscribers_.reserve(input_topics_.size());
+  cloud_subscriber_callback_groups_.reserve(input_topics_.size());
   for (size_t i = 0; i < input_topics_.size(); ++i) {
     const std::string configured = input_topics_[i];
     const std::string resolved = this->get_node_topics_interface()->resolve_topic_name(configured);
@@ -372,11 +375,20 @@ void PointCloudFusion::setup() {
                                  ? input_transport_hints_[i]
                                  : std::string(kDefaultTransportHint);
 
+    auto callback_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    rclcpp::SubscriptionOptions subscription_options;
+    subscription_options.callback_group = callback_group;
+
     auto subscriber = std::make_shared<point_cloud_transport::SubscriberFilter>();
-    subscriber->subscribe(this->shared_from_this(), resolved, hint);
+    subscriber->subscribe(this->shared_from_this(), resolved, hint, rmw_qos_profile_default, subscription_options);
     RCLCPP_INFO(this->get_logger(), "Subscribed to '%s' (hint=%s)", subscriber->getTopic().c_str(), hint.c_str());
+    cloud_subscriber_callback_groups_.push_back(std::move(callback_group));
     cloud_subscribers_.push_back(std::move(subscriber));
   }
+
+  RCLCPP_INFO(this->get_logger(),
+              "Configured %zu input subscriber callback groups for %zu input topics",
+              cloud_subscriber_callback_groups_.size());
 
   synchronizer_.reset();
 
