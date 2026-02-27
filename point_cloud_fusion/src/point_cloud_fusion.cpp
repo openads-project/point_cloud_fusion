@@ -240,6 +240,7 @@ void PointCloudFusion::declareAndLoadParameter(const std::string& name, T& param
 
 rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(
     const std::vector<rclcpp::Parameter>& parameters) {
+  std::unique_lock<std::shared_mutex> config_lock(config_mutex_);
   for (const auto& param : parameters) {
     for (auto& auto_reconfigurable_param : auto_reconfigurable_params_) {
       if (param.get_name() == std::get<0>(auto_reconfigurable_param)) {
@@ -507,6 +508,9 @@ void PointCloudFusion::handleSynchronizedPointClouds(
   if (msgs.empty()) {
     return;
   }
+
+  // Protect runtime-configurable parameter reads against concurrent parameter updates.
+  std::shared_lock<std::shared_mutex> config_lock(config_mutex_);
 
   const auto callback_start = std::chrono::steady_clock::now();
 
