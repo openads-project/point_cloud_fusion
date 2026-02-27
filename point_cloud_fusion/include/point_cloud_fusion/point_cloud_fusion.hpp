@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -183,6 +184,7 @@ class PointCloudFusion : public rclcpp::Node {
    * @brief CUDA context for GPU acceleration
    */
   std::unique_ptr<cuda::CudaTransformContext> cuda_context_;
+  std::mutex cuda_context_mutex_;
 #endif
 };
 

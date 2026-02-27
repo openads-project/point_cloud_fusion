@@ -516,14 +516,24 @@ void PointCloudFusion::handleSynchronizedPointClouds(
   }
 
 #ifdef ENABLE_CUDA
-  // Run either CPU or CUDA implementation based on parameter
-  if (cuda_context_ && use_cuda_) {
-    // CUDA version
-    std::size_t cuda_valid_count = 0;
-    const auto processing_start = std::chrono::steady_clock::now();
-    auto cuda_result = fusePointCloudBatchCUDA(msgs, timing, cuda_valid_count);
-    const auto processing_end = std::chrono::steady_clock::now();
+  std::size_t cuda_valid_count = 0;
+  auto processing_start = std::chrono::steady_clock::time_point{};
+  auto processing_end = std::chrono::steady_clock::time_point{};
+  PointCloudMsg::UniquePtr cuda_result;
+  bool used_cuda = false;
+  {
+    // Guard shared CUDA pipeline state against concurrent synchronized callbacks.
+    std::lock_guard<std::mutex> cuda_lock(cuda_context_mutex_);
+    // Run either CPU or CUDA implementation based on parameter.
+    if (cuda_context_ && use_cuda_) {
+      used_cuda = true;
+      processing_start = std::chrono::steady_clock::now();
+      cuda_result = fusePointCloudBatchCUDA(msgs, timing, cuda_valid_count);
+      processing_end = std::chrono::steady_clock::now();
+    }
+  }
 
+  if (used_cuda) {
     if (cuda_result) {
       publishFusedCloud(std::move(cuda_result), timing, msgs.size(), cuda_valid_count, callback_start, processing_start,
                         processing_end, "cuda_fusion_complete");
