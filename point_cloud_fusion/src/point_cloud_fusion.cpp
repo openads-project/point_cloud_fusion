@@ -389,7 +389,7 @@ void PointCloudFusion::setup() {
 
   RCLCPP_INFO(this->get_logger(),
               "Configured %zu input subscriber callback groups for %zu input topics",
-              cloud_subscriber_callback_groups_.size());
+              cloud_subscriber_callback_groups_.size(), input_topics_.size());
 
   synchronizer_.reset();
 
@@ -550,7 +550,7 @@ void PointCloudFusion::handleSynchronizedPointClouds(
 
   // CPU-only path
   std::size_t valid_count = 0;
-  const auto processing_start = std::chrono::steady_clock::now();
+  const auto cpu_processing_start = std::chrono::steady_clock::now();
   auto fused_point_cloud = fusePointCloudBatch(msgs, timing, valid_count);
 
   if (!fused_point_cloud) {
@@ -558,9 +558,9 @@ void PointCloudFusion::handleSynchronizedPointClouds(
     return;
   }
 
-  const auto processing_end = std::chrono::steady_clock::now();
-  publishFusedCloud(std::move(fused_point_cloud), timing, msgs.size(), valid_count, callback_start, processing_start,
-                    processing_end, "cpu_fusion_complete");
+  const auto cpu_processing_end = std::chrono::steady_clock::now();
+  publishFusedCloud(std::move(fused_point_cloud), timing, msgs.size(), valid_count, callback_start, cpu_processing_start,
+                    cpu_processing_end, "cpu_fusion_complete");
 }
 
 bool PointCloudFusion::collectTimingInfo(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
