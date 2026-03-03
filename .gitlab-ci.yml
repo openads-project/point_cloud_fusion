@@ -11,8 +11,6 @@ variables:
   CMAKE_ARGS: "-DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DREQUIRE_CUDA=ON"
 
   SLIM_BUILD_ARGS: >
-    --env DOCKER_UID=1000
-    --env DOCKER_GID=1000 
     --env DOCKER_EPHEMERAL_USER=true
     --sensor-ipc-mode=proxy
     --continue-after=30
