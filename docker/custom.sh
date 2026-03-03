@@ -24,18 +24,17 @@ if [ "$ARCH" = "amd64" ]; then
     # Clean up apt cache to reduce image size
     rm -rf /var/lib/apt/lists/*
 
-    # Set CUDA environment variables for:
-    # 1. Interactive bash shells
+    # Expose CUDA tools for interactive shells
     echo 'export PATH=/usr/local/cuda-12.8/bin:$PATH' >> /etc/bash.bashrc
-    echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.8/lib64:$LD_LIBRARY_PATH' >> /etc/bash.bashrc
-    
-    # 2. Non-interactive shells and Docker build stages
-    echo 'PATH=/usr/local/cuda-12.8/bin:$PATH' >> /etc/environment
-    
-    # 3. Create symlink so CMake can find CUDA without full path
+
+    # Register CUDA runtime path with the dynamic linker for non-interactive runtime
+    echo '/usr/local/cuda-12.8/targets/x86_64-linux/lib' > /etc/ld.so.conf.d/cuda.conf
+    ldconfig
+
+    # Create symlink so CMake can find CUDA without full path
     ln -sf /usr/local/cuda-12.8 /usr/local/cuda
 
-    # 4. Create marker file to indicate CUDA is available
+    # Create marker file to indicate CUDA is available
     touch "$CMAKE_CACHE_DIR/cuda-available"
 
     echo "CUDA Toolkit 12.8 installation complete!"
