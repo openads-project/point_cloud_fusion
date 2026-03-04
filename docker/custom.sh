@@ -16,10 +16,13 @@ if [ "$ARCH" = "amd64" ]; then
     dpkg -i cuda-keyring_1.1-1_all.deb
     rm cuda-keyring_1.1-1_all.deb
 
-    # Update apt cache and install CUDA toolkit
+    # Update apt cache and install only the CUDA packages required by this repo:
     apt-get update
     apt-get install -y --no-install-recommends \
-        cuda-toolkit-12-8
+        cuda-nvcc-12-8 \
+        cuda-cudart-dev-12-8 \
+        cuda-cudart-12-8 \
+        cuda-driver-dev-12-8
 
     # Clean up apt cache to reduce image size
     rm -rf /var/lib/apt/lists/*
