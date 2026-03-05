@@ -21,6 +21,7 @@
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
 #include <rclcpp_components/register_node_macro.hpp>
+#include <rmw/qos_profiles.h>
 RCLCPP_COMPONENTS_REGISTER_NODE(point_cloud_fusion::PointCloudFusion)
 
 namespace {
@@ -239,6 +240,7 @@ void PointCloudFusion::declareAndLoadParameter(const std::string& name, T& param
 
 rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(
     const std::vector<rclcpp::Parameter>& parameters) {
+  std::unique_lock<std::shared_mutex> config_lock(config_mutex_);
   for (const auto& param : parameters) {
     for (auto& auto_reconfigurable_param : auto_reconfigurable_params_) {
       if (param.get_name() == std::get<0>(auto_reconfigurable_param)) {
@@ -364,7 +366,9 @@ void PointCloudFusion::setup() {
 
   // create subscribers
   cloud_subscribers_.clear();
+  cloud_subscriber_callback_groups_.clear();
   cloud_subscribers_.reserve(input_topics_.size());
+  cloud_subscriber_callback_groups_.reserve(input_topics_.size());
   for (size_t i = 0; i < input_topics_.size(); ++i) {
     const std::string configured = input_topics_[i];
     const std::string resolved = this->get_node_topics_interface()->resolve_topic_name(configured);
@@ -372,11 +376,20 @@ void PointCloudFusion::setup() {
                                  ? input_transport_hints_[i]
                                  : std::string(kDefaultTransportHint);
 
+    auto callback_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    rclcpp::SubscriptionOptions subscription_options;
+    subscription_options.callback_group = callback_group;
+
     auto subscriber = std::make_shared<point_cloud_transport::SubscriberFilter>();
-    subscriber->subscribe(this->shared_from_this(), resolved, hint);
+    subscriber->subscribe(this->shared_from_this(), resolved, hint, rmw_qos_profile_default, subscription_options);
     RCLCPP_INFO(this->get_logger(), "Subscribed to '%s' (hint=%s)", subscriber->getTopic().c_str(), hint.c_str());
+    cloud_subscriber_callback_groups_.push_back(std::move(callback_group));
     cloud_subscribers_.push_back(std::move(subscriber));
   }
+
+  RCLCPP_INFO(this->get_logger(),
+              "Configured %zu input subscriber callback groups for %zu input topics",
+              cloud_subscriber_callback_groups_.size(), input_topics_.size());
 
   synchronizer_.reset();
 
@@ -496,6 +509,9 @@ void PointCloudFusion::handleSynchronizedPointClouds(
     return;
   }
 
+  // Protect runtime-configurable parameter reads against concurrent parameter updates.
+  std::shared_lock<std::shared_mutex> config_lock(config_mutex_);
+
   const auto callback_start = std::chrono::steady_clock::now();
 
   FusionTiming timing;
@@ -504,14 +520,24 @@ void PointCloudFusion::handleSynchronizedPointClouds(
   }
 
 #ifdef ENABLE_CUDA
-  // Run either CPU or CUDA implementation based on parameter
-  if (cuda_context_ && use_cuda_) {
-    // CUDA version
-    std::size_t cuda_valid_count = 0;
-    const auto processing_start = std::chrono::steady_clock::now();
-    auto cuda_result = fusePointCloudBatchCUDA(msgs, timing, cuda_valid_count);
-    const auto processing_end = std::chrono::steady_clock::now();
+  std::size_t cuda_valid_count = 0;
+  auto processing_start = std::chrono::steady_clock::time_point{};
+  auto processing_end = std::chrono::steady_clock::time_point{};
+  PointCloudMsg::UniquePtr cuda_result;
+  bool used_cuda = false;
+  {
+    // Guard shared CUDA pipeline state against concurrent synchronized callbacks.
+    std::lock_guard<std::mutex> cuda_lock(cuda_context_mutex_);
+    // Run either CPU or CUDA implementation based on parameter.
+    if (cuda_context_ && use_cuda_) {
+      used_cuda = true;
+      processing_start = std::chrono::steady_clock::now();
+      cuda_result = fusePointCloudBatchCUDA(msgs, timing, cuda_valid_count);
+      processing_end = std::chrono::steady_clock::now();
+    }
+  }
 
+  if (used_cuda) {
     if (cuda_result) {
       publishFusedCloud(std::move(cuda_result), timing, msgs.size(), cuda_valid_count, callback_start, processing_start,
                         processing_end, "cuda_fusion_complete");
@@ -524,7 +550,7 @@ void PointCloudFusion::handleSynchronizedPointClouds(
 
   // CPU-only path
   std::size_t valid_count = 0;
-  const auto processing_start = std::chrono::steady_clock::now();
+  const auto cpu_processing_start = std::chrono::steady_clock::now();
   auto fused_point_cloud = fusePointCloudBatch(msgs, timing, valid_count);
 
   if (!fused_point_cloud) {
@@ -532,9 +558,9 @@ void PointCloudFusion::handleSynchronizedPointClouds(
     return;
   }
 
-  const auto processing_end = std::chrono::steady_clock::now();
-  publishFusedCloud(std::move(fused_point_cloud), timing, msgs.size(), valid_count, callback_start, processing_start,
-                    processing_end, "cpu_fusion_complete");
+  const auto cpu_processing_end = std::chrono::steady_clock::now();
+  publishFusedCloud(std::move(fused_point_cloud), timing, msgs.size(), valid_count, callback_start, cpu_processing_start,
+                    cpu_processing_end, "cpu_fusion_complete");
 }
 
 bool PointCloudFusion::collectTimingInfo(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,

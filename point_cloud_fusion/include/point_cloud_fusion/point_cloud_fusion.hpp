@@ -2,7 +2,9 @@
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <vector>
 
@@ -152,8 +154,10 @@ class PointCloudFusion : public rclcpp::Node {
    * @brief Auto-reconfigurable parameters for dynamic reconfiguration
    */
   std::vector<std::tuple<std::string, std::function<void(const rclcpp::Parameter&)>>> auto_reconfigurable_params_;
+  mutable std::shared_mutex config_mutex_;
 
   std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>> cloud_subscribers_;
+  std::vector<rclcpp::CallbackGroup::SharedPtr> cloud_subscriber_callback_groups_;
   std::shared_ptr<void> synchronizer_;
 
   /**
@@ -182,6 +186,7 @@ class PointCloudFusion : public rclcpp::Node {
    * @brief CUDA context for GPU acceleration
    */
   std::unique_ptr<cuda::CudaTransformContext> cuda_context_;
+  std::mutex cuda_context_mutex_;
 #endif
 };
 
