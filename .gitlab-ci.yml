@@ -22,5 +22,6 @@ variables:
     --include-path /etc/ld.so.conf.d
     --include-path /opt/ros
     --include-path /docker-ros/ws
-    --include-bin /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so.12.8.90
-    --include-bin /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so.12
+    --preserve-path /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so
+    --preserve-path /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so.12
+    --preserve-path /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so.12.8.90
