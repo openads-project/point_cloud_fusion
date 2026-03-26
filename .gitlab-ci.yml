@@ -11,17 +11,7 @@ variables:
   COMMAND: ros2 launch point_cloud_fusion point_cloud_fusion.launch.py
   CMAKE_ARGS: "-DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DREQUIRE_CUDA=ON"
 
-  SLIM_BUILD_ARGS: >
-    --env DOCKER_EPHEMERAL_USER=true
-    --sensor-ipc-mode=proxy
-    --continue-after=30
-    --show-clogs
-    --http-probe=false
-    --include-path /etc/ld.so.cache
-    --include-path /etc/ld.so.conf
-    --include-path /etc/ld.so.conf.d
-    --include-path /opt/ros
-    --include-path /docker-ros/ws
+  ADDITIONAL_SLIM_BUILD_ARGS: >
     --preserve-path /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so
     --preserve-path /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so.12
     --preserve-path /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so.12.8.90
