@@ -7,7 +7,7 @@
     input_transport_hints:
       - "raw"
       - "raw"
-     
+
     sync_queue_size: 3 # Queue depth for approximate time synchronization
     max_time_diff_sec: 0.05 # Maximum allowed timestamp difference (seconds) across inputs
     output_queue_size: 10 # Queue depth for fused output publisher
