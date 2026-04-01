@@ -14,7 +14,7 @@ from tracetools_launch.action import Trace
 def generate_launch_description():
 
     remappable_topics = [
-        DeclareLaunchArgument("output_topic", default_value="~/output"),
+        DeclareLaunchArgument("point_cloud_topic", default_value="~/point_cloud"),
     ]
 
     args = [

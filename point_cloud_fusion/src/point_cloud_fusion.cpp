@@ -437,9 +437,9 @@ void PointCloudFusion::setup() {
 
   // create publisher
   point_cloud_transport::PointCloudTransport pct(this->shared_from_this());
-  std::string output_topic_name = this->get_node_topics_interface()->resolve_topic_name("~/output");
+  std::string point_cloud_topic_name = this->get_node_topics_interface()->resolve_topic_name("~/point_cloud");
   cloud_publisher_ = std::make_shared<point_cloud_transport::Publisher>(
-      pct.advertise(output_topic_name, static_cast<uint32_t>(output_queue_size_)));
+      pct.advertise(point_cloud_topic_name, static_cast<uint32_t>(output_queue_size_)));
   RCLCPP_INFO(this->get_logger(), "Publishing to '%s'", cloud_publisher_->getTopic().c_str());
 
   // Annotate message links for tracing: Each publisher (for raw and compressed point clouds) depends an all input point clouds.
