@@ -71,7 +71,8 @@ class CudaTransformContext {
    */
   bool resetBatch(size_t total_max_points, size_t max_single_cloud_points, size_t input_point_step,
                   size_t output_point_step, int src_x_offset, int src_y_offset, int src_z_offset, int dst_x_offset,
-                  int dst_y_offset, int dst_z_offset, const std::vector<CudaFieldCopy>& copy_plan);
+                  int dst_y_offset, int dst_z_offset, const std::vector<CudaFieldCopy>& copy_plan, float x_min,
+                  float x_max, float y_min, float y_max, float z_min, float z_max);
 
   /**
    * @brief Add a point cloud to the current batch
@@ -133,6 +134,12 @@ class CudaTransformContext {
   int current_dst_x_offset_;
   int current_dst_y_offset_;
   int current_dst_z_offset_;
+  float current_x_min_;
+  float current_x_max_;
+  float current_y_min_;
+  float current_y_max_;
+  float current_z_min_;
+  float current_z_max_;
   int num_copy_ops_;
 
   // We keep a host vector of metadata to fill before upload

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -142,6 +143,12 @@ class PointCloudFusion : public rclcpp::Node {
   // Optional: limit each input cloud to this many points before processing.
   // 0 = disabled (use actual point count per cloud)
   int64_t fixed_points_per_input_cloud_ = 0;
+  double x_min_ = -std::numeric_limits<double>::infinity();
+  double x_max_ = std::numeric_limits<double>::infinity();
+  double y_min_ = -std::numeric_limits<double>::infinity();
+  double y_max_ = std::numeric_limits<double>::infinity();
+  double z_min_ = -std::numeric_limits<double>::infinity();
+  double z_max_ = std::numeric_limits<double>::infinity();
   bool use_cuda_ = true;
   OutputStampMode output_stamp_mode_ = OutputStampMode::Earliest;
   std::string output_stamp_mode_param_ = "earliest";

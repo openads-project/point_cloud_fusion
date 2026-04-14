@@ -14,6 +14,12 @@
     age_penalty: 0.1 # Optional ApproximateTime tuning
     use_cuda: true # Enable CUDA acceleration (requires CUDA build)
     fixed_points_per_input_cloud: 0 # 0=disabled
+    x_min: -.inf # Limits are evaluated in target_frame; use -.inf/+inf to disable an axis bound
+    x_max: .inf
+    y_min: -.inf
+    y_max: .inf
+    z_min: -.inf
+    z_max: .inf
     # output_fields: # Determine which fields to include in the output point cloud (all if not set)
     #   - "x"
     #   - "y"

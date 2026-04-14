@@ -46,6 +46,11 @@ inline std::size_t pointFieldDatatypeSize(uint8_t datatype) {
   }
 }
 
+inline bool pointWithinRange(float x, float y, float z, double x_min, double x_max, double y_min, double y_max,
+                             double z_min, double z_max) {
+  return x >= x_min && x <= x_max && y >= y_min && y <= y_max && z >= z_min && z <= z_max;
+}
+
 }  // namespace
 
 namespace point_cloud_fusion {
@@ -122,6 +127,30 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 "Enable CUDA acceleration if available",
                                 false, false, true, std::nullopt, std::nullopt, std::nullopt,
                                 "Default: true");
+  this->declareAndLoadParameter("x_min", x_min_,
+                                "Minimum x coordinate in target_frame to keep (-inf disables the lower bound)",
+                                false, false, true, std::nullopt, std::nullopt, std::nullopt,
+                                "Filtering is applied in target_frame.");
+  this->declareAndLoadParameter("x_max", x_max_,
+                                "Maximum x coordinate in target_frame to keep (+inf disables the upper bound)",
+                                false, false, true, std::nullopt, std::nullopt, std::nullopt,
+                                "Filtering is applied in target_frame.");
+  this->declareAndLoadParameter("y_min", y_min_,
+                                "Minimum y coordinate in target_frame to keep (-inf disables the lower bound)",
+                                false, false, true, std::nullopt, std::nullopt, std::nullopt,
+                                "Filtering is applied in target_frame.");
+  this->declareAndLoadParameter("y_max", y_max_,
+                                "Maximum y coordinate in target_frame to keep (+inf disables the upper bound)",
+                                false, false, true, std::nullopt, std::nullopt, std::nullopt,
+                                "Filtering is applied in target_frame.");
+  this->declareAndLoadParameter("z_min", z_min_,
+                                "Minimum z coordinate in target_frame to keep (-inf disables the lower bound)",
+                                false, false, true, std::nullopt, std::nullopt, std::nullopt,
+                                "Filtering is applied in target_frame.");
+  this->declareAndLoadParameter("z_max", z_max_,
+                                "Maximum z coordinate in target_frame to keep (+inf disables the upper bound)",
+                                false, false, true, std::nullopt, std::nullopt, std::nullopt,
+                                "Filtering is applied in target_frame.");
   this->declareAndLoadParameter("max_time_diff_sec", max_time_diff_sec_,         // name
                                 "Max time diff for synchronization (seconds)",   // description
                                 false,                                           // add_to_auto_reconfigurable_params
@@ -811,7 +840,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     const auto* src_data = msg->data.data();
     const size_t total_points = static_cast<size_t>(msg->width) * static_cast<size_t>(msg->height);
 
-    auto emit_point = [&](const uint8_t* point_ptr, float x, float y, float z) {
+    auto emit_point = [&](const uint8_t* point_ptr, float x, float y, float z, bool overwrite_xyz) {
       if (use_all_fields) {
         std::memcpy(dest_ptr, point_ptr, point_step);
       } else {
@@ -820,16 +849,13 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
         }
       }
 
-      if (apply_transform) {
-        const tf2::Vector3 rotated = rotation * tf2::Vector3(x, y, z) + translation;
+      if (overwrite_xyz) {
         auto* dest_x = reinterpret_cast<float*>(dest_ptr + fused_x_offset);
         auto* dest_y = reinterpret_cast<float*>(dest_ptr + fused_y_offset);
         auto* dest_z = reinterpret_cast<float*>(dest_ptr + fused_z_offset);
-        *dest_x = static_cast<float>(rotated.x());
-        *dest_y = static_cast<float>(rotated.y());
-        *dest_z = static_cast<float>(rotated.z());
-      } else {
-        // XYZ already live in the target frame; copying the raw bytes is enough.
+        *dest_x = x;
+        *dest_y = y;
+        *dest_z = z;
       }
 
       dest_ptr += fused_point_step;
@@ -848,7 +874,25 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
           continue;
         }
 
-        emit_point(point_ptr, x, y, z);
+        if (!apply_transform) {
+          if (!pointWithinRange(x, y, z, x_min_, x_max_, y_min_, y_max_, z_min_, z_max_)) {
+            continue;
+          }
+          emit_point(point_ptr, x, y, z, false);
+          continue;
+        }
+
+        const tf2::Vector3 rotated = rotation * tf2::Vector3(x, y, z) + translation;
+        const float transformed_x = static_cast<float>(rotated.x());
+        const float transformed_y = static_cast<float>(rotated.y());
+        const float transformed_z = static_cast<float>(rotated.z());
+
+        if (!pointWithinRange(transformed_x, transformed_y, transformed_z, x_min_, x_max_, y_min_, y_max_, z_min_,
+                              z_max_)) {
+          continue;
+        }
+
+        emit_point(point_ptr, transformed_x, transformed_y, transformed_z, true);
       }
       continue;
     }
@@ -870,7 +914,25 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
         continue;
       }
 
-      emit_point(point_ptr, x, y, z);
+      if (!apply_transform) {
+        if (!pointWithinRange(x, y, z, x_min_, x_max_, y_min_, y_max_, z_min_, z_max_)) {
+          continue;
+        }
+        emit_point(point_ptr, x, y, z, false);
+        continue;
+      }
+
+      const tf2::Vector3 rotated = rotation * tf2::Vector3(x, y, z) + translation;
+      const float transformed_x = static_cast<float>(rotated.x());
+      const float transformed_y = static_cast<float>(rotated.y());
+      const float transformed_z = static_cast<float>(rotated.z());
+
+      if (!pointWithinRange(transformed_x, transformed_y, transformed_z, x_min_, x_max_, y_min_, y_max_, z_min_,
+                            z_max_)) {
+        continue;
+      }
+
+      emit_point(point_ptr, transformed_x, transformed_y, transformed_z, true);
     }
   }
 
@@ -1104,7 +1166,10 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   // Reset batch with fixed slots
   // Note: total_input_capacity is for input buffers, but output may be smaller due to downsampling
   if (!cuda_context_->resetBatch(total_input_capacity, slot_size, point_step, fused_point_step, x_offset, y_offset,
-                                 z_offset, fused_x_offset, fused_y_offset, fused_z_offset, copy_plan)) {
+                                 z_offset, fused_x_offset, fused_y_offset, fused_z_offset, copy_plan,
+                                 static_cast<float>(x_min_), static_cast<float>(x_max_), static_cast<float>(y_min_),
+                                 static_cast<float>(y_max_), static_cast<float>(z_min_),
+                                 static_cast<float>(z_max_))) {
     RCLCPP_ERROR(this->get_logger(), "CUDA resetBatch failed");
     return nullptr;
   }
