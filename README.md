@@ -43,9 +43,10 @@ This package provides the `point_cloud_fusion` node, which subscribes to multipl
 | `output_stamp_mode` | `string` | Controls the timestamp written to the fused cloud header. Supported values: `earliest` (default; stamp of the oldest cloud in the batch), `latest` (stamp of the newest cloud in the batch), `mean` (midpoint between earliest and latest), `input0` (timestamp from `input_topics[0]` in the synchronized batch). This only affects the published header stamp, not the transformation of each input cloud. |
 | `use_cuda` | `boolean` | Enable GPU acceleration via CUDA (default `true` when compiled with CUDA support). Falls back to CPU implementation if CUDA is unavailable or disabled. |
 | `fixed_points_per_input_cloud` | `integer` | If greater than 0, limit each input cloud to at most this many **valid** points (NaN/Inf filtered out) before fusing. Processing stops once the limit is reached for each cloud. Default `0` (disabled; process all points from each cloud). |
-| `x_min` | `double` | Minimum x coordinate to keep in `target_frame`. Default `-inf` (disabled). |
-| `x_max` | `double` | Maximum x coordinate to keep in `target_frame`. Default `+inf` (disabled). |
-| `y_min` | `double` | Minimum y coordinate to keep in `target_frame`. Default `-inf` (disabled). |
-| `y_max` | `double` | Maximum y coordinate to keep in `target_frame`. Default `+inf` (disabled). |
-| `z_min` | `double` | Minimum z coordinate to keep in `target_frame`. Default `-inf` (disabled). |
-| `z_max` | `double` | Maximum z coordinate to keep in `target_frame`. Default `+inf` (disabled). |
+| `range_limits.enable` | `boolean` | Enable XYZ range filtering in `target_frame`. When `false` (default), no range filtering is applied and all finite points pass through. |
+| `range_limits.x_min` | `double` | Minimum x coordinate to keep in `target_frame`, in meters (default `-1000.0`). Must be less than `range_limits.x_max`. Valid range: `[-1000, 1000]` m. |
+| `range_limits.x_max` | `double` | Maximum x coordinate to keep in `target_frame`, in meters (default `1000.0`). Must be greater than `range_limits.x_min`. Valid range: `[-1000, 1000]` m. |
+| `range_limits.y_min` | `double` | Minimum y coordinate to keep in `target_frame`, in meters (default `-1000.0`). Must be less than `range_limits.y_max`. Valid range: `[-1000, 1000]` m. |
+| `range_limits.y_max` | `double` | Maximum y coordinate to keep in `target_frame`, in meters (default `1000.0`). Must be greater than `range_limits.y_min`. Valid range: `[-1000, 1000]` m. |
+| `range_limits.z_min` | `double` | Minimum z coordinate to keep in `target_frame`, in meters (default `-20.0`). Must be less than `range_limits.z_max`. Valid range: `[-20, 20]` m. |
+| `range_limits.z_max` | `double` | Maximum z coordinate to keep in `target_frame`, in meters (default `20.0`). Must be greater than `range_limits.z_min`. Valid range: `[-20, 20]` m. |
