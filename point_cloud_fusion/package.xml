@@ -11,7 +11,7 @@
   <author email="bastian.lampe@rwth-aachen.de">Bastian Lampe</author>
   <author email="jean-pierre.busch@rwth-aachen.de">Jean-Pierre Busch</author>
 
-  <license>TODO</license>
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
@@ -26,6 +26,11 @@
   <depend>tf2_sensor_msgs</depend>
   <depend>tracetools</depend>
   <depend>tracetools_launch</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_cmake_clang_format</test_depend>
+  <test_depend>ament_cmake_clang_tidy</test_depend>
+  <test_depend>ament_cmake_flake8</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

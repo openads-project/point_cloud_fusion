@@ -1,0 +1,33 @@
+name: docker-ros
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  docker-ros:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ika-rwth-aachen/docker-ros@main
+        with:
+          platform: amd64,arm64
+          target: dev,run
+          base-image: rwthika/ros2:jazzy
+          rmw-implementation: rmw_zenoh_cpp
+          command: ros2 launch point_cloud_fusion point_cloud_fusion.launch.py
+          enable-industrial-ci: true
+        env:
+          ENABLE_RECURSIVE_VCS_IMPORT: 'false'
+          CMAKE_ARGS: -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DREQUIRE_CUDA=ON
+          TARGET_CMAKE_ARGS: -DCMAKE_EXPORT_COMPILE_COMMANDS=1
+          ADDITIONAL_SLIM_BUILD_ARGS: >-
+            --preserve-path /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so
+            --preserve-path /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so.12
+            --preserve-path /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so.12.8.90

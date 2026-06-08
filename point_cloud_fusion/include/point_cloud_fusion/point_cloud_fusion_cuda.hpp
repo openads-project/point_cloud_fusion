@@ -1,3 +1,6 @@
+// Copyright Institute for Automotive Engineering (ika), RWTH Aachen University
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 #ifdef ENABLE_CUDA
@@ -55,7 +58,7 @@ class CudaTransformContext {
 
   /**
    * @brief Prepare for a new batch of point clouds
-   * 
+   *
    * @param total_max_points Maximum possible number of points in the batch (sum of all clouds)
    * @param max_single_cloud_points Maximum number of points in any single cloud
    * @param input_point_step Size of each input point in bytes
@@ -75,7 +78,7 @@ class CudaTransformContext {
 
   /**
    * @brief Add a point cloud to the current batch
-   * 
+   *
    * @param input_data Raw point cloud data
    * @param num_points Number of points in input
    * @param rotation_matrix_host 3x3 rotation matrix (row-major, 9 floats)
@@ -90,7 +93,7 @@ class CudaTransformContext {
 
   /**
    * @brief Get the accumulated results from the batch
-   * 
+   *
    * @param output_data Output point cloud data (full points with all fields)
    * @param valid_count Number of valid (finite) points output
    * @return true on success, false on error

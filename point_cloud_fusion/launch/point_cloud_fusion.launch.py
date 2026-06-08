@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+# Copyright Institute for Automotive Engineering (ika), RWTH Aachen University
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 
 from ament_index_python import get_package_share_directory
@@ -12,6 +15,7 @@ from tracetools_launch.action import Trace
 
 
 def generate_launch_description():
+    """Generate the point_cloud_fusion launch description."""
 
     remappable_topics = [
         DeclareLaunchArgument("point_cloud_topic", default_value="~/point_cloud"),
@@ -20,8 +24,16 @@ def generate_launch_description():
     args = [
         DeclareLaunchArgument("name", default_value="point_cloud_fusion", description="node name"),
         DeclareLaunchArgument("namespace", default_value="", description="node namespace"),
-        DeclareLaunchArgument("params", default_value=os.path.join(get_package_share_directory("point_cloud_fusion"), "config", "params.yml"), description="path to parameter file"),
-        DeclareLaunchArgument("log_level", default_value="info", description="ROS logging level (debug, info, warn, error, fatal)"),
+        DeclareLaunchArgument(
+            "params",
+            default_value=os.path.join(get_package_share_directory("point_cloud_fusion"), "config", "params.yml"),
+            description="path to parameter file",
+        ),
+        DeclareLaunchArgument(
+            "log_level",
+            default_value="info",
+            description="ROS logging level (debug, info, warn, error, fatal)",
+        ),
         DeclareLaunchArgument("use_sim_time", default_value="false", description="use simulation clock"),
         DeclareLaunchArgument("trace", default_value="false", description="Enable tracing"),
         *remappable_topics,
@@ -42,7 +54,7 @@ def generate_launch_description():
             emulate_tty=True,
         ),
         Trace(
-            session_name='trace',
+            session_name="trace",
             dual_session=True,
             condition=IfCondition(LaunchConfiguration("trace")),
         ),

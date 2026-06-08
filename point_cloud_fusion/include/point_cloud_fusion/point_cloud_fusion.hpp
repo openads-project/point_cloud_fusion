@@ -1,3 +1,6 @@
+// Copyright Institute for Automotive Engineering (ika), RWTH Aachen University
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 #include <chrono>
@@ -70,6 +73,12 @@ class PointCloudFusion : public rclcpp::Node {
                                const std::optional<double>& step_value = std::nullopt,
                                const std::string& additional_constraints = "");
 
+  /**
+   * @brief Validate and apply dynamic parameter updates.
+   *
+   * @param parameters ROS parameters requested for update.
+   * @return Result indicating whether the update was accepted.
+   */
   rcl_interfaces::msg::SetParametersResult parametersCallback(const std::vector<rclcpp::Parameter>& parameters);
 
   /**
@@ -81,15 +90,26 @@ class PointCloudFusion : public rclcpp::Node {
    * @brief Process synchronized point clouds
    *
    * @param msgs batch of synchronized point clouds
-  */
+   */
   void handleSynchronizedPointClouds(const std::vector<sensor_msgs::msg::PointCloud2::ConstSharedPtr>& msgs);
 
+  /**
+   * @brief Create the approximate-time synchronizer for a fixed number of input topics.
+   *
+   * @tparam N Number of synchronized point-cloud inputs.
+   */
   template <std::size_t N>
   void setupSynchronizer();
 
   using PointCloudMsg = sensor_msgs::msg::PointCloud2;
 
+  /**
+   * @brief Timing metadata for one synchronized fusion batch.
+   */
   struct FusionTiming {
+    /**
+     * @brief Construct timing metadata with zero-initialized stamps and deltas.
+     */
     FusionTiming()
         : earliest_stamp(rclcpp::Time()),
           latest_stamp(rclcpp::Time()),
@@ -101,8 +121,23 @@ class PointCloudFusion : public rclcpp::Node {
     double max_dt_from_input0_sec;
   };
 
+  /**
+   * @brief Collect timestamp statistics for synchronized input clouds.
+   *
+   * @param msgs Synchronized input point clouds.
+   * @param timing Output timing metadata populated from the batch.
+   * @return True if timing metadata could be collected for the batch.
+   */
   bool collectTimingInfo(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs, FusionTiming& timing) const;
 
+  /**
+   * @brief Fuse a synchronized point-cloud batch using the CPU path.
+   *
+   * @param msgs Synchronized input point clouds.
+   * @param timing Timing metadata for the batch.
+   * @param valid_point_count Number of valid points written to the output cloud.
+   * @return Fused point cloud.
+   */
   PointCloudMsg::UniquePtr fusePointCloudBatch(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
                                                const FusionTiming& timing, std::size_t& valid_point_count) const;
 
@@ -111,6 +146,18 @@ class PointCloudFusion : public rclcpp::Node {
                                                    const FusionTiming& timing, std::size_t& valid_point_count) const;
 #endif
 
+  /**
+   * @brief Publish a fused point cloud and emit tracing/timing diagnostics.
+   *
+   * @param cloud Fused point cloud to publish.
+   * @param timing Timing metadata for the synchronized input batch.
+   * @param input_count Number of input clouds in the batch.
+   * @param total_points Number of points before filtering.
+   * @param callback_start Time when the synchronized callback started.
+   * @param processing_start Time when fusion processing started.
+   * @param processing_end Time when fusion processing ended.
+   * @param event_name Trace event name for the selected backend.
+   */
   void publishFusedCloud(PointCloudMsg::UniquePtr cloud, const FusionTiming& timing, std::size_t input_count,
                          std::size_t total_points, std::chrono::steady_clock::time_point callback_start,
                          std::chrono::steady_clock::time_point processing_start,
@@ -119,7 +166,15 @@ class PointCloudFusion : public rclcpp::Node {
  private:
   enum class OutputStampMode { Latest, Earliest, Mean, Input0 };
 
+  /**
+   * @brief Parse and store the configured output timestamp mode.
+   *
+   * @param mode Timestamp mode parameter value.
+   */
   void configureOutputStampMode(const std::string& mode);
+  /**
+   * @brief Validate that the configured input topic list is usable.
+   */
   void validateInputTopicsParameter() const;
 
   static constexpr int32_t kMinSyncQueueSize = 1;

@@ -1,3 +1,6 @@
+// Copyright Institute for Automotive Engineering (ika), RWTH Aachen University
+// SPDX-License-Identifier: Apache-2.0
+
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -331,6 +334,14 @@ using SyncPolicy = typename SyncPolicyTraits<N>::Policy;
 template <std::size_t N>
 using SyncType = message_filters::Synchronizer<SyncPolicy<N>>;
 
+/**
+ * @brief Connect subscriber filters to the synchronizer through an index sequence.
+ *
+ * @tparam N Number of synchronizer inputs.
+ * @tparam Is Subscriber indices expanded into connectInput.
+ * @param sync Synchronizer receiving the subscriber filters.
+ * @param subs Subscriber filters to connect.
+ */
 template <std::size_t N, std::size_t... Is>
 void connectInputsImpl(SyncType<N>& sync,
                        const std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>>& subs,
@@ -339,6 +350,13 @@ void connectInputsImpl(SyncType<N>& sync,
   sync.connectInput(*subs[Is]...);
 }
 
+/**
+ * @brief Connect all subscriber filters to the synchronizer for N inputs.
+ *
+ * @tparam N Number of synchronizer inputs.
+ * @param sync Synchronizer receiving the subscriber filters.
+ * @param subs Subscriber filters to connect.
+ */
 template <std::size_t N>
 void connectInputs(SyncType<N>& sync,
                    const std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>>& subs) {
