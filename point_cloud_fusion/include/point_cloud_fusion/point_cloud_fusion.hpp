@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -121,6 +122,7 @@ class PointCloudFusion : public rclcpp::Node {
 
   void configureOutputStampMode(const std::string& mode);
   void validateInputTopicsParameter() const;
+  void validateRangeLimits();
 
   static constexpr int32_t kMinSyncQueueSize = 1;
   static constexpr int32_t kMaxSyncQueueSize = 1000;
@@ -131,6 +133,10 @@ class PointCloudFusion : public rclcpp::Node {
   static constexpr std::size_t kMaxInputTopics = 9;
   static constexpr const char* kDefaultTransportHint = "raw";
   static constexpr const char* kAllowedOutputStampModes = "latest, earliest, mean, input0";
+  static constexpr double kMinRangeXY = -1000.0;
+  static constexpr double kMaxRangeXY = 1000.0;
+  static constexpr double kMinRangeZ = -20.0;
+  static constexpr double kMaxRangeZ = 20.0;
 
   /**
    * @brief ROS parameters
@@ -142,6 +148,13 @@ class PointCloudFusion : public rclcpp::Node {
   // Optional: limit each input cloud to this many points before processing.
   // 0 = disabled (use actual point count per cloud)
   int64_t fixed_points_per_input_cloud_ = 0;
+  bool range_limits_enable_ = false;
+  double range_limits_x_min_ = -1000.0;
+  double range_limits_x_max_ = 1000.0;
+  double range_limits_y_min_ = -1000.0;
+  double range_limits_y_max_ = 1000.0;
+  double range_limits_z_min_ = -20.0;
+  double range_limits_z_max_ = 20.0;
   bool use_cuda_ = true;
   OutputStampMode output_stamp_mode_ = OutputStampMode::Earliest;
   std::string output_stamp_mode_param_ = "earliest";

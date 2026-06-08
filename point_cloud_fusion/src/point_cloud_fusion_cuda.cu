@@ -14,7 +14,8 @@ __global__ void fusedTransformKernel(const uint8_t* input_points, uint8_t* outpu
                                      const CudaFieldCopy* copy_plan, int num_copy_ops, int num_slots,
                                      int slot_size_points, int input_point_step, int output_point_step,
                                      int src_x_offset, int src_y_offset, int src_z_offset, int dst_x_offset,
-                                     int dst_y_offset, int dst_z_offset) {
+                                     int dst_y_offset, int dst_z_offset, float x_min, float x_max, float y_min,
+                                     float y_max, float z_min, float z_max, int range_enable) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int slot_idx = idx / slot_size_points;
 
@@ -71,6 +72,11 @@ __global__ void fusedTransformKernel(const uint8_t* input_points, uint8_t* outpu
     transformed_x = x;
     transformed_y = y;
     transformed_z = z;
+  }
+
+  if (range_enable) {
+    if (transformed_x < x_min || transformed_x > x_max || transformed_y < y_min || transformed_y > y_max ||
+        transformed_z < z_min || transformed_z > z_max) return;
   }
 
   // Atomic append
@@ -231,6 +237,13 @@ CudaTransformContext::CudaTransformContext()
       current_dst_x_offset_(0),
       current_dst_y_offset_(0),
       current_dst_z_offset_(0),
+      current_x_min_(-INFINITY),
+      current_x_max_(INFINITY),
+      current_y_min_(-INFINITY),
+      current_y_max_(INFINITY),
+      current_z_min_(-INFINITY),
+      current_z_max_(INFINITY),
+      current_range_enable_(false),
       num_copy_ops_(0) {
   CUDA_CHECK_THROW(cudaStreamCreate(reinterpret_cast<cudaStream_t*>(&stream_)));
   CUDA_CHECK_THROW(cudaMallocHost(&h_global_count_pinned_, sizeof(unsigned int)));
@@ -311,7 +324,8 @@ bool CudaTransformContext::ensureOutputCapacity(size_t total_max_points, size_t 
 bool CudaTransformContext::resetBatch(size_t total_max_points, size_t max_single_cloud_points, size_t input_point_step,
                                       size_t output_point_step, int src_x_offset, int src_y_offset, int src_z_offset,
                                       int dst_x_offset, int dst_y_offset, int dst_z_offset,
-                                      const std::vector<CudaFieldCopy>& copy_plan) {
+                                      const std::vector<CudaFieldCopy>& copy_plan, float x_min, float x_max,
+                                      float y_min, float y_max, float z_min, float z_max, bool range_enable) {
   current_input_point_step_ = input_point_step;
   current_output_point_step_ = output_point_step;
   current_src_x_offset_ = src_x_offset;
@@ -320,6 +334,13 @@ bool CudaTransformContext::resetBatch(size_t total_max_points, size_t max_single
   current_dst_x_offset_ = dst_x_offset;
   current_dst_y_offset_ = dst_y_offset;
   current_dst_z_offset_ = dst_z_offset;
+  current_x_min_ = x_min;
+  current_x_max_ = x_max;
+  current_y_min_ = y_min;
+  current_y_max_ = y_max;
+  current_z_min_ = z_min;
+  current_z_max_ = z_max;
+  current_range_enable_ = range_enable;
 
   // Treat max_single_cloud_points as the per-cloud slot size (padding)
   slot_size_points_ = max_single_cloud_points;
@@ -457,7 +478,8 @@ bool CudaTransformContext::getBatchOutput(std::vector<uint8_t>& output_data, siz
       static_cast<CloudMetadata*>(d_cloud_metadata_), static_cast<CudaFieldCopy*>(d_copy_plan_), num_copy_ops_,
       static_cast<int>(num_slots_), static_cast<int>(slot_size_points_), static_cast<int>(current_input_point_step_),
       static_cast<int>(current_output_point_step_), current_src_x_offset_, current_src_y_offset_, current_src_z_offset_,
-      current_dst_x_offset_, current_dst_y_offset_, current_dst_z_offset_);
+      current_dst_x_offset_, current_dst_y_offset_, current_dst_z_offset_, current_x_min_, current_x_max_,
+      current_y_min_, current_y_max_, current_z_min_, current_z_max_, current_range_enable_ ? 1 : 0);
 
   CUDA_CHECK(cudaGetLastError());
 
