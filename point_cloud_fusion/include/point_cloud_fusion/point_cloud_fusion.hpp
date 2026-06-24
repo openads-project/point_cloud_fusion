@@ -205,7 +205,7 @@ class PointCloudFusion : public rclcpp::Node {
   static constexpr int32_t kStepSizeOutputQueueSize = 1;
   static constexpr int64_t kMinFixedPointsPerInputCloud = 0;
   static constexpr int64_t kMaxFixedPointsPerInputCloud = 10000000;
-  static constexpr int64_t kStepSizeFixedPointsPerInputCloud = 1;
+  static constexpr int64_t kStepSizeFixedPointsPerInputCloud = 100;
   static constexpr std::size_t kMaxInputTopics = 9;
   static constexpr const char* kDefaultTransportHint = "raw";
   static constexpr const char* kAllowedOutputStampModes = "latest, earliest, mean, input0";
