@@ -56,7 +56,7 @@ ros2 launch point_cloud_fusion point_cloud_fusion.launch.py \
 | `output_fields` | `string array` | Optional subset of point fields to keep in the fused cloud. Empty publishes all incoming fields. |
 | `output_stamp_mode` | `string` | Fused header timestamp mode: `earliest`, `latest`, `mean`, or `input0`. Default: `earliest`. |
 | `use_cuda` | `bool` | Enable CUDA acceleration when compiled with CUDA support. Default: `true`. |
-| `fixed_points_per_input_cloud` | `integer` | If greater than `0`, limits each input cloud to at most this many valid points before fusion. Default: `0`. |
+| `fixed_points_per_input_cloud` | `integer` | Runtime-reconfigurable limit for valid points processed per input cloud. `0` disables the limit. Updates apply atomically between fusion batches. Valid range: `[0, 10000000]`. Default: `0`. |
 
 ## Point-Cloud Transport
 

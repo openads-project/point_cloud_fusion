@@ -133,12 +133,12 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
   // Allow user to optionally limit the per-cloud point count to a maximum
   this->declareAndLoadParameter("fixed_points_per_input_cloud", fixed_points_per_input_cloud_,
                                 "If >0, limit each input cloud to this many valid points before fusing",
-                                false,                                           // add_to_auto_reconfigurable_params
+                                true,                                            // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
-                                true,                                            // read_only
-                                0.0,                                             // from_value
-                                10000000.0,                                      // to_value
-                                1.0,                                             // step_value
+                                false,                                           // read_only
+                                kMinFixedPointsPerInputCloud,                    // from_value
+                                kMaxFixedPointsPerInputCloud,                    // to_value
+                                kStepSizeFixedPointsPerInputCloud,               // step_value
                                 "0 = disabled; reasonable range is 0 to 10,000,000 points per input cloud");
   this->declareAndLoadParameter("use_cuda", use_cuda_,                           // name
                                 "Enable CUDA acceleration if available",         // description
@@ -332,9 +332,11 @@ void PointCloudFusion::declareAndLoadParameter(const std::string& name,
 rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(const std::vector<rclcpp::Parameter>& parameters) {
   std::unique_lock<std::shared_mutex> config_lock(config_mutex_);
 
-  // Pre-validate range limits before applying any changes.
+  // Pre-validate interdependent and runtime-sensitive parameters before
+  // applying any changes.
   // Build the prospective state: current values overridden by incoming changes.
   bool any_range_param = false;
+  int64_t prospective_fixed_points_per_input_cloud = fixed_points_per_input_cloud_;
   double prospective_x_min = range_limits_x_min_;
   double prospective_x_max = range_limits_x_max_;
   double prospective_y_min = range_limits_y_min_;
@@ -344,7 +346,9 @@ rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(co
 
   for (const auto& param : parameters) {
     const auto& name = param.get_name();
-    if (name == "range_limits.x_min") {
+    if (name == "fixed_points_per_input_cloud") {
+      prospective_fixed_points_per_input_cloud = param.as_int();
+    } else if (name == "range_limits.x_min") {
       prospective_x_min = param.as_double();
       any_range_param = true;
     } else if (name == "range_limits.x_max") {
@@ -363,6 +367,16 @@ rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(co
       prospective_z_max = param.as_double();
       any_range_param = true;
     }
+  }
+
+  if (prospective_fixed_points_per_input_cloud < kMinFixedPointsPerInputCloud ||
+      prospective_fixed_points_per_input_cloud > kMaxFixedPointsPerInputCloud) {
+    rcl_interfaces::msg::SetParametersResult result;
+    result.successful = false;
+    result.reason = "fixed_points_per_input_cloud must be in [" + std::to_string(kMinFixedPointsPerInputCloud) + ", " +
+                    std::to_string(kMaxFixedPointsPerInputCloud) + "]";
+    RCLCPP_ERROR(this->get_logger(), "Rejecting parameter update: %s", result.reason.c_str());
+    return result;
   }
 
   if (any_range_param) {
