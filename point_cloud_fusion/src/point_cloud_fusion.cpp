@@ -49,6 +49,20 @@ inline std::size_t pointFieldDatatypeSize(uint8_t datatype) {
   }
 }
 
+/**
+ * @brief Check whether a point lies inside the configured inclusive XYZ bounds.
+ *
+ * @param x Point x coordinate in the target frame.
+ * @param y Point y coordinate in the target frame.
+ * @param z Point z coordinate in the target frame.
+ * @param x_min Minimum accepted x coordinate.
+ * @param x_max Maximum accepted x coordinate.
+ * @param y_min Minimum accepted y coordinate.
+ * @param y_max Maximum accepted y coordinate.
+ * @param z_min Minimum accepted z coordinate.
+ * @param z_max Maximum accepted z coordinate.
+ * @return True when the point lies within every configured bound.
+ */
 inline bool pointWithinRange(
     float x, float y, float z, float x_min, float x_max, float y_min, float y_max, float z_min, float z_max) {
   return x >= x_min && x <= x_max && y >= y_min && y <= y_max && z >= z_min && z <= z_max;
@@ -269,7 +283,10 @@ void PointCloudFusion::declareAndLoadParameter(const std::string& name,
       if (step_value.has_value()) range.set__step(static_cast<T>(step_value.value()));
       param_desc.floating_point_range = {range};
     } else {
-      RCLCPP_WARN(this->get_logger(), "Parameter type of parameter '%s' does not support specifying a range", name.c_str());
+      RCLCPP_WARN(this->get_logger(),
+                  "Parameter type of parameter '%s' does not support "
+                  "specifying a range",
+                  name.c_str());
     }
   }
 
@@ -475,7 +492,8 @@ template <std::size_t N>
 using SyncType = message_filters::Synchronizer<SyncPolicy<N>>;
 
 /**
- * @brief Connect subscriber filters to the synchronizer through an index sequence.
+ * @brief Connect subscriber filters to the synchronizer through an index
+ * sequence.
  *
  * @tparam N Number of synchronizer inputs.
  * @tparam Is Subscriber indices expanded into connectInput.
@@ -516,7 +534,8 @@ void PointCloudFusion::setup() {
   // validate inputs
   if (!input_transport_hints_.empty() && input_transport_hints_.size() != input_topics_.size()) {
     RCLCPP_WARN(this->get_logger(),
-                "'input_transport_hints' length (%zu) does not match 'input_topics' (%zu). Missing hints default to "
+                "'input_transport_hints' length (%zu) does not match "
+                "'input_topics' (%zu). Missing hints default to "
                 "'%s'",
                 input_transport_hints_.size(), input_topics_.size(), kDefaultTransportHint);
   }
@@ -598,7 +617,8 @@ void PointCloudFusion::setup() {
       pct.advertise(point_cloud_topic_name, static_cast<uint32_t>(output_queue_size_)));
   RCLCPP_INFO(this->get_logger(), "Publishing to '%s'", cloud_publisher_->getTopic().c_str());
 
-  // Annotate message links for tracing: Each publisher (for raw and compressed point clouds) depends an all input point clouds.
+  // Annotate message links for tracing: Each publisher (for raw and compressed
+  // point clouds) depends an all input point clouds.
   std::vector<const void*> link_subs;
   std::vector<const void*> link_pubs;
   for (const auto& sub_filter : cloud_subscribers_) {
@@ -647,14 +667,17 @@ void PointCloudFusion::setupSynchronizer() {
     if (!batch.empty()) {
       this->handleSynchronizedPointClouds(batch);
     } else {
-      RCLCPP_WARN(this->get_logger(), "ApproximateTime synchronizer yielded no valid point clouds; skipping fusion.");
+      RCLCPP_WARN(this->get_logger(),
+                  "ApproximateTime synchronizer yielded no "
+                  "valid point clouds; skipping fusion.");
     }
   });
 
   synchronizer_ = sync;
 
   RCLCPP_INFO(this->get_logger(),
-              "Configured approximate time synchronizer for %zu inputs (queue=%zu, max_dt=%.3f s, age_penalty=%.6f)",
+              "Configured approximate time synchronizer for %zu inputs "
+              "(queue=%zu, max_dt=%.3f s, age_penalty=%.6f)",
               static_cast<size_t>(N), static_cast<size_t>(sync_queue_size_), max_time_diff_sec_, age_penalty_);
 }
 
@@ -663,7 +686,8 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
     return;
   }
 
-  // Protect runtime-configurable parameter reads against concurrent parameter updates.
+  // Protect runtime-configurable parameter reads against concurrent parameter
+  // updates.
   std::shared_lock<std::shared_mutex> config_lock(config_mutex_);
 
   const auto callback_start = std::chrono::steady_clock::now();
@@ -680,7 +704,8 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
   PointCloudMsg::UniquePtr cuda_result;
   bool used_cuda = false;
   {
-    // Guard shared CUDA pipeline state against concurrent synchronized callbacks.
+    // Guard shared CUDA pipeline state against concurrent synchronized
+    // callbacks.
     std::lock_guard<std::mutex> cuda_lock(cuda_context_mutex_);
     // Run either CPU or CUDA implementation based on parameter.
     if (cuda_context_ && use_cuda_) {
@@ -728,10 +753,13 @@ bool PointCloudFusion::collectTimingInfo(const std::vector<PointCloudMsg::ConstS
   rclcpp::Time earliest_stamp;
   rclcpp::Time latest_stamp;
 
-  // Walk every cloud once to gather min/max stamps and the largest skew from input0.
+  // Walk every cloud once to gather min/max stamps and the largest skew from
+  // input0.
   for (const auto& pc_msg : msgs) {
     if (!pc_msg) {
-      RCLCPP_WARN(this->get_logger(), "Received null point cloud pointer in synchronized batch, skipping fusion");
+      RCLCPP_WARN(this->get_logger(),
+                  "Received null point cloud pointer in "
+                  "synchronized batch, skipping fusion");
       return false;
     }
 
@@ -819,7 +847,8 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
                        [&requested_name](const sensor_msgs::msg::PointField& field) { return field.name == requested_name; });
       if (iter == input0_fields.end()) {
         RCLCPP_WARN(this->get_logger(),
-                    "Requested output field '%s' not present in incoming point cloud; publishing full field set instead.",
+                    "Requested output field '%s' not present in incoming point "
+                    "cloud; publishing full field set instead.",
                     requested_name.c_str());
         selection_valid = false;
         break;
@@ -827,7 +856,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
 
       const std::size_t datatype_size = pointFieldDatatypeSize(iter->datatype);
       if (datatype_size == 0) {
-        RCLCPP_WARN(this->get_logger(), "Point field '%s' uses unsupported datatype %u; publishing full field set instead.",
+        RCLCPP_WARN(this->get_logger(),
+                    "Point field '%s' uses unsupported datatype %u; publishing "
+                    "full field set instead.",
                     requested_name.c_str(), static_cast<unsigned int>(iter->datatype));
         selection_valid = false;
         break;
@@ -853,7 +884,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
 
     if (!selection_valid || fused_x_offset < 0 || fused_y_offset < 0 || fused_z_offset < 0) {
       if (selection_valid) {
-        RCLCPP_ERROR(this->get_logger(), "Output field selection must include x, y, and z; publishing full field set instead.");
+        RCLCPP_ERROR(this->get_logger(),
+                     "Output field selection must include x, y, and z; "
+                     "publishing full field set instead.");
       }
       use_all_fields = true;
       copy_plan.clear();
@@ -873,7 +906,8 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     fused_z_offset = z_offset;
   }
 
-  // Reserve enough space once so the fusion loop only appends into a pre-sized buffer.
+  // Reserve enough space once so the fusion loop only appends into a pre-sized
+  // buffer.
   const size_t max_capacity = std::accumulate(
       msgs.begin(), msgs.end(), static_cast<size_t>(0), [this](size_t sum, const PointCloudMsg::ConstSharedPtr& cloud) {
         if (!cloud) {
@@ -945,7 +979,8 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       continue;
     }
 
-    // Cache the frame transform once per cloud to avoid repeated TF queries inside the point loop.
+    // Cache the frame transform once per cloud to avoid repeated TF queries
+    // inside the point loop.
     const bool apply_transform = msg->header.frame_id != target_frame_;
     tf2::Vector3 translation;
     tf2::Matrix3x3 rotation;
@@ -1088,7 +1123,8 @@ void PointCloudFusion::publishFusedCloud(PointCloudMsg::UniquePtr cloud,
                                          std::chrono::steady_clock::time_point processing_start,
                                          std::chrono::steady_clock::time_point processing_end,
                                          const char* event_name) {
-  // Publish the fused cloud and emit a compact timing summary for observability.
+  // Publish the fused cloud and emit a compact timing summary for
+  // observability.
   cloud_publisher_->publish(std::move(cloud));
   const auto publish_end = std::chrono::steady_clock::now();
 
@@ -1099,7 +1135,8 @@ void PointCloudFusion::publishFusedCloud(PointCloudMsg::UniquePtr cloud,
   const double batch_dt_ms = (timing.latest_stamp - timing.earliest_stamp).seconds() * 1000.0;
 
   RCLCPP_DEBUG(this->get_logger(),
-               "%s inputs=%zu points=%zu e2e_ms=%.3f prep_ms=%.3f process_ms=%.3f publish_ms=%.3f batch_dt_ms=%.3f "
+               "%s inputs=%zu points=%zu e2e_ms=%.3f prep_ms=%.3f "
+               "process_ms=%.3f publish_ms=%.3f batch_dt_ms=%.3f "
                "max_dt_ms=%.3f",
                event_name, input_count, total_points, e2e_duration_ms, prep_duration_ms, processing_duration_ms,
                publish_duration_ms, batch_dt_ms, timing.max_dt_from_input0_sec * 1000.0);
@@ -1130,7 +1167,9 @@ void PointCloudFusion::validateInputTopicsParameter() const {
     exit(EXIT_FAILURE);
   }
   if (input_topics_.size() > kMaxInputTopics) {
-    RCLCPP_FATAL(this->get_logger(), "Configured with %zu input topics, but only up to %zu inputs are supported",
+    RCLCPP_FATAL(this->get_logger(),
+                 "Configured with %zu input topics, but only up to %zu inputs "
+                 "are supported",
                  input_topics_.size(), kMaxInputTopics);
     exit(EXIT_FAILURE);
   }
@@ -1140,19 +1179,22 @@ void PointCloudFusion::validateRangeLimits() {
   bool valid = true;
   if (range_limits_x_min_ >= range_limits_x_max_) {
     RCLCPP_ERROR(this->get_logger(),
-                 "range_limits.x_min (%.3f) must be less than range_limits.x_max (%.3f); disabling range filtering",
+                 "range_limits.x_min (%.3f) must be less than "
+                 "range_limits.x_max (%.3f); disabling range filtering",
                  range_limits_x_min_, range_limits_x_max_);
     valid = false;
   }
   if (range_limits_y_min_ >= range_limits_y_max_) {
     RCLCPP_ERROR(this->get_logger(),
-                 "range_limits.y_min (%.3f) must be less than range_limits.y_max (%.3f); disabling range filtering",
+                 "range_limits.y_min (%.3f) must be less than "
+                 "range_limits.y_max (%.3f); disabling range filtering",
                  range_limits_y_min_, range_limits_y_max_);
     valid = false;
   }
   if (range_limits_z_min_ >= range_limits_z_max_) {
     RCLCPP_ERROR(this->get_logger(),
-                 "range_limits.z_min (%.3f) must be less than range_limits.z_max (%.3f); disabling range filtering",
+                 "range_limits.z_min (%.3f) must be less than "
+                 "range_limits.z_max (%.3f); disabling range filtering",
                  range_limits_z_min_, range_limits_z_max_);
     valid = false;
   }
@@ -1217,7 +1259,8 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
                        [&requested_name](const sensor_msgs::msg::PointField& field) { return field.name == requested_name; });
       if (iter == input0_fields.end()) {
         RCLCPP_WARN(this->get_logger(),
-                    "Requested output field '%s' not present in incoming point cloud; publishing full field set instead.",
+                    "Requested output field '%s' not present in incoming point "
+                    "cloud; publishing full field set instead.",
                     requested_name.c_str());
         selection_valid = false;
         break;
@@ -1225,7 +1268,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
 
       const std::size_t datatype_size = pointFieldDatatypeSize(iter->datatype);
       if (datatype_size == 0) {
-        RCLCPP_WARN(this->get_logger(), "Point field '%s' uses unsupported datatype %u; publishing full field set instead.",
+        RCLCPP_WARN(this->get_logger(),
+                    "Point field '%s' uses unsupported datatype %u; publishing "
+                    "full field set instead.",
                     requested_name.c_str(), static_cast<unsigned int>(iter->datatype));
         selection_valid = false;
         break;
@@ -1254,7 +1299,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
 
     if (!selection_valid || fused_x_offset < 0 || fused_y_offset < 0 || fused_z_offset < 0) {
       if (selection_valid) {
-        RCLCPP_ERROR(this->get_logger(), "Output field selection must include x, y, and z; publishing full field set instead.");
+        RCLCPP_ERROR(this->get_logger(),
+                     "Output field selection must include x, y, and z; "
+                     "publishing full field set instead.");
       }
       use_all_fields = true;
       copy_plan.clear();
@@ -1275,9 +1322,10 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
 
     // If using all fields, we can just copy the whole point step as one chunk
     // But we still need to overwrite XYZ.
-    // Actually, if we use all fields, we can just create a single copy op for the whole point
-    // OR we can iterate over fields if we want to be precise, but copying the whole struct is faster.
-    // Let's just create one copy op for the whole point.
+    // Actually, if we use all fields, we can just create a single copy op for
+    // the whole point OR we can iterate over fields if we want to be precise,
+    // but copying the whole struct is faster. Let's just create one copy op for
+    // the whole point.
     cuda::CudaFieldCopy plan;
     plan.src_offset = 0;
     plan.dst_offset = 0;
@@ -1286,8 +1334,8 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   }
 
   // Calculate max points for batch reset
-  // For strided sampling, slots must hold the FULL input cloud (we sample from all points)
-  // But output capacity only needs space for the downsampled count
+  // For strided sampling, slots must hold the FULL input cloud (we sample from
+  // all points) But output capacity only needs space for the downsampled count
   size_t total_output_points = 0;
   size_t max_single_cloud_points = 0;  // Max points in any single input cloud (for slot sizing)
   for (const auto& msg : msgs) {
@@ -1308,7 +1356,8 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     return nullptr;
   }
 
-  // slot_size is the FULL max cloud size (not capped) for strided sampling to work
+  // slot_size is the FULL max cloud size (not capped) for strided sampling to
+  // work
   size_t slot_size = max_single_cloud_points;
 
   // Total input capacity is slot_size * number_of_inputs
@@ -1316,7 +1365,8 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   size_t total_input_capacity = slot_size * num_inputs;
 
   // Reset batch with fixed slots
-  // Note: total_input_capacity is for input buffers, but output may be smaller due to downsampling
+  // Note: total_input_capacity is for input buffers, but output may be smaller
+  // due to downsampling
   if (!cuda_context_->resetBatch(total_input_capacity, slot_size, point_step, fused_point_step, x_offset, y_offset, z_offset,
                                  fused_x_offset, fused_y_offset, fused_z_offset, copy_plan,
                                  static_cast<float>(range_limits_x_min_), static_cast<float>(range_limits_x_max_),
@@ -1327,7 +1377,8 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     return nullptr;
   }
 
-  // Process each cloud and write into its fixed slot index (preserve input order)
+  // Process each cloud and write into its fixed slot index (preserve input
+  // order)
   for (size_t i = 0; i < msgs.size(); ++i) {
     const auto& msg = msgs[i];
     if (!msg || msg->point_step != point_step || msg->fields != input0_fields) {

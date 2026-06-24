@@ -58,7 +58,8 @@ class PointCloudFusion : public rclcpp::Node {
    * @param name name
    * @param param parameter variable to load into
    * @param description description
-   * @param add_to_auto_reconfigurable_params enable reconfiguration of parameter
+   * @param add_to_auto_reconfigurable_params enable reconfiguration of
+   * parameter
    * @param is_required whether failure to load parameter will stop node
    * @param read_only set parameter to read-only
    * @param from_value parameter range minimum
@@ -99,7 +100,8 @@ class PointCloudFusion : public rclcpp::Node {
   void handleSynchronizedPointClouds(const std::vector<sensor_msgs::msg::PointCloud2::ConstSharedPtr>& msgs);
 
   /**
-   * @brief Create the approximate-time synchronizer for a fixed number of input topics.
+   * @brief Create the approximate-time synchronizer for a fixed number of input
+   * topics.
    *
    * @tparam N Number of synchronized point-cloud inputs.
    */
@@ -140,7 +142,8 @@ class PointCloudFusion : public rclcpp::Node {
    *
    * @param msgs Synchronized input point clouds.
    * @param timing Timing metadata for the batch.
-   * @param valid_point_count Number of valid points written to the output cloud.
+   * @param valid_point_count Number of valid points written to the output
+   * cloud.
    * @return Fused point cloud.
    */
   PointCloudMsg::UniquePtr fusePointCloudBatch(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
@@ -187,6 +190,11 @@ class PointCloudFusion : public rclcpp::Node {
    * @brief Validate that the configured input topic list is usable.
    */
   void validateInputTopicsParameter() const;
+
+  /**
+   * @brief Validate configured XYZ range limits and disable filtering when
+   * invalid.
+   */
   void validateRangeLimits();
 
   static constexpr int32_t kMinSyncQueueSize = 1;
