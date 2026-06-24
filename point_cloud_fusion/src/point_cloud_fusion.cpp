@@ -23,8 +23,8 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
-#include <rclcpp_components/register_node_macro.hpp>
 #include <rmw/qos_profiles.h>
+#include <rclcpp_components/register_node_macro.hpp>
 RCLCPP_COMPONENTS_REGISTER_NODE(point_cloud_fusion::PointCloudFusion)
 
 namespace {
@@ -47,6 +47,11 @@ inline std::size_t pointFieldDatatypeSize(uint8_t datatype) {
     default:
       return 0;
   }
+}
+
+inline bool pointWithinRange(
+    float x, float y, float z, float x_min, float x_max, float y_min, float y_max, float z_min, float z_max) {
+  return x >= x_min && x <= x_max && y >= y_min && y <= y_max && z >= z_min && z <= z_max;
 }
 
 }  // namespace
@@ -121,10 +126,75 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 10000000.0,                                      // to_value
                                 1.0,                                             // step_value
                                 "0 = disabled; reasonable range is 0 to 10,000,000 points per input cloud");
-  this->declareAndLoadParameter("use_cuda", use_cuda_,
-                                "Enable CUDA acceleration if available",
-                                false, false, true, std::nullopt, std::nullopt, std::nullopt,
-                                "Default: true");
+  this->declareAndLoadParameter("use_cuda", use_cuda_,                           // name
+                                "Enable CUDA acceleration if available",         // description
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true,                                            // read_only
+                                std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
+                                "Default: true");                                // additional_constraints
+  this->declareAndLoadParameter("range_limits.enable", range_limits_enable_,     // name
+                                "Enable XYZ range filtering in target_frame",    // description
+                                true,                                            // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                false,                                           // read_only
+                                std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
+                                "When false, no range filtering is applied.");   // additional_constraints
+  this->declareAndLoadParameter("range_limits.x_min", range_limits_x_min_,       // name
+                                "Minimum x coordinate in target_frame to keep [m]",  // description
+                                true,                                            // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                false,                                           // read_only
+                                kMinRangeXY,                                     // from_value
+                                kMaxRangeXY,                                     // to_value
+                                std::nullopt,                                    // step_value
+                                "Must be less than range_limits.x_max.");        // additional_constraints
+  this->declareAndLoadParameter("range_limits.x_max", range_limits_x_max_,       // name
+                                "Maximum x coordinate in target_frame to keep [m]",  // description
+                                true,                                            // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                false,                                           // read_only
+                                kMinRangeXY,                                     // from_value
+                                kMaxRangeXY,                                     // to_value
+                                std::nullopt,                                    // step_value
+                                "Must be greater than range_limits.x_min.");     // additional_constraints
+  this->declareAndLoadParameter("range_limits.y_min", range_limits_y_min_,       // name
+                                "Minimum y coordinate in target_frame to keep [m]",  // description
+                                true,                                            // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                false,                                           // read_only
+                                kMinRangeXY,                                     // from_value
+                                kMaxRangeXY,                                     // to_value
+                                std::nullopt,                                    // step_value
+                                "Must be less than range_limits.y_max.");        // additional_constraints
+  this->declareAndLoadParameter("range_limits.y_max", range_limits_y_max_,       // name
+                                "Maximum y coordinate in target_frame to keep [m]",  // description
+                                true,                                            // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                false,                                           // read_only
+                                kMinRangeXY,                                     // from_value
+                                kMaxRangeXY,                                     // to_value
+                                std::nullopt,                                    // step_value
+                                "Must be greater than range_limits.y_min.");     // additional_constraints
+  this->declareAndLoadParameter("range_limits.z_min", range_limits_z_min_,       // name
+                                "Minimum z coordinate in target_frame to keep [m]",  // description
+                                true,                                            // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                false,                                           // read_only
+                                kMinRangeZ,                                      // from_value
+                                kMaxRangeZ,                                      // to_value
+                                std::nullopt,                                    // step_value
+                                "Must be less than range_limits.z_max.");        // additional_constraints
+  this->declareAndLoadParameter("range_limits.z_max", range_limits_z_max_,       // name
+                                "Maximum z coordinate in target_frame to keep [m]",  // description
+                                true,                                            // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                false,                                           // read_only
+                                kMinRangeZ,                                      // from_value
+                                kMaxRangeZ,                                      // to_value
+                                std::nullopt,                                    // step_value
+                                "Must be greater than range_limits.z_min.");     // additional_constraints
+  validateRangeLimits();
   this->declareAndLoadParameter("max_time_diff_sec", max_time_diff_sec_,         // name
                                 "Max time diff for synchronization (seconds)",   // description
                                 false,                                           // add_to_auto_reconfigurable_params
@@ -170,9 +240,13 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
 // clang-format on
 
 template <typename T>
-void PointCloudFusion::declareAndLoadParameter(const std::string& name, T& param, const std::string& description,
-                                               const bool add_to_auto_reconfigurable_params, const bool is_required,
-                                               const bool read_only, const std::optional<double>& from_value,
+void PointCloudFusion::declareAndLoadParameter(const std::string& name,
+                                               T& param,
+                                               const std::string& description,
+                                               const bool add_to_auto_reconfigurable_params,
+                                               const bool is_required,
+                                               const bool read_only,
+                                               const std::optional<double>& from_value,
                                                const std::optional<double>& to_value,
                                                const std::optional<double>& step_value,
                                                const std::string& additional_constraints) {
@@ -195,8 +269,7 @@ void PointCloudFusion::declareAndLoadParameter(const std::string& name, T& param
       if (step_value.has_value()) range.set__step(static_cast<T>(step_value.value()));
       param_desc.floating_point_range = {range};
     } else {
-      RCLCPP_WARN(this->get_logger(), "Parameter type of parameter '%s' does not support specifying a range",
-                  name.c_str());
+      RCLCPP_WARN(this->get_logger(), "Parameter type of parameter '%s' does not support specifying a range", name.c_str());
     }
   }
 
@@ -234,16 +307,71 @@ void PointCloudFusion::declareAndLoadParameter(const std::string& name, T& param
   }
 
   if (add_to_auto_reconfigurable_params) {
-    std::function<void(const rclcpp::Parameter&)> setter = [&param](const rclcpp::Parameter& p) {
-      param = p.get_value<T>();
-    };
+    std::function<void(const rclcpp::Parameter&)> setter = [&param](const rclcpp::Parameter& p) { param = p.get_value<T>(); };
     auto_reconfigurable_params_.push_back(std::make_tuple(name, setter));
   }
 }
 
-rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(
-    const std::vector<rclcpp::Parameter>& parameters) {
+rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(const std::vector<rclcpp::Parameter>& parameters) {
   std::unique_lock<std::shared_mutex> config_lock(config_mutex_);
+
+  // Pre-validate range limits before applying any changes.
+  // Build the prospective state: current values overridden by incoming changes.
+  bool any_range_param = false;
+  double prospective_x_min = range_limits_x_min_;
+  double prospective_x_max = range_limits_x_max_;
+  double prospective_y_min = range_limits_y_min_;
+  double prospective_y_max = range_limits_y_max_;
+  double prospective_z_min = range_limits_z_min_;
+  double prospective_z_max = range_limits_z_max_;
+
+  for (const auto& param : parameters) {
+    const auto& name = param.get_name();
+    if (name == "range_limits.x_min") {
+      prospective_x_min = param.as_double();
+      any_range_param = true;
+    } else if (name == "range_limits.x_max") {
+      prospective_x_max = param.as_double();
+      any_range_param = true;
+    } else if (name == "range_limits.y_min") {
+      prospective_y_min = param.as_double();
+      any_range_param = true;
+    } else if (name == "range_limits.y_max") {
+      prospective_y_max = param.as_double();
+      any_range_param = true;
+    } else if (name == "range_limits.z_min") {
+      prospective_z_min = param.as_double();
+      any_range_param = true;
+    } else if (name == "range_limits.z_max") {
+      prospective_z_max = param.as_double();
+      any_range_param = true;
+    }
+  }
+
+  if (any_range_param) {
+    rcl_interfaces::msg::SetParametersResult result;
+    std::string reason;
+    if (prospective_x_min >= prospective_x_max) {
+      reason += "range_limits.x_min (" + std::to_string(prospective_x_min) + ") must be less than range_limits.x_max (" +
+                std::to_string(prospective_x_max) + "). ";
+    }
+    if (prospective_y_min >= prospective_y_max) {
+      reason += "range_limits.y_min (" + std::to_string(prospective_y_min) + ") must be less than range_limits.y_max (" +
+                std::to_string(prospective_y_max) + "). ";
+    }
+    if (prospective_z_min >= prospective_z_max) {
+      reason += "range_limits.z_min (" + std::to_string(prospective_z_min) + ") must be less than range_limits.z_max (" +
+                std::to_string(prospective_z_max) + "). ";
+    }
+    if (!reason.empty()) {
+      result.successful = false;
+      result.reason = reason;
+      RCLCPP_ERROR(this->get_logger(), "Rejecting range_limits parameter update: %s", reason.c_str());
+      return result;
+    }
+  }
+
+  // All validations passed — apply changes.
   for (const auto& param : parameters) {
     for (auto& auto_reconfigurable_param : auto_reconfigurable_params_) {
       if (param.get_name() == std::get<0>(auto_reconfigurable_param)) {
@@ -268,64 +396,76 @@ struct SyncPolicyTraits;
 
 template <>
 struct SyncPolicyTraits<2> {
-  using Policy =
-      message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2>;
+  using Policy = message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2>;
 };
 
 template <>
 struct SyncPolicyTraits<3> {
-  using Policy =
-      message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2,
-                                                      sensor_msgs::msg::PointCloud2>;
+  using Policy = message_filters::sync_policies::
+      ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2>;
 };
 
 template <>
 struct SyncPolicyTraits<4> {
-  using Policy =
-      message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2,
-                                                      sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2>;
+  using Policy = message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2>;
 };
 
 template <>
 struct SyncPolicyTraits<5> {
-  using Policy =
-      message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2,
-                                                      sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2,
-                                                      sensor_msgs::msg::PointCloud2>;
+  using Policy = message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2>;
 };
 
 template <>
 struct SyncPolicyTraits<6> {
-  using Policy =
-      message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2,
-                                                      sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2,
-                                                      sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2>;
+  using Policy = message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2>;
 };
 
 template <>
 struct SyncPolicyTraits<7> {
-  using Policy =
-      message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2,
-                                                      sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2,
-                                                      sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2,
-                                                      sensor_msgs::msg::PointCloud2>;
+  using Policy = message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2>;
 };
 
 template <>
 struct SyncPolicyTraits<8> {
-  using Policy =
-      message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2,
-                                                      sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2,
-                                                      sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2,
-                                                      sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2>;
+  using Policy = message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2>;
 };
 
 template <>
 struct SyncPolicyTraits<9> {
-  using Policy = message_filters::sync_policies::ApproximateTime<
-      sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2,
-      sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2,
-      sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2>;
+  using Policy = message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2,
+                                                                 sensor_msgs::msg::PointCloud2>;
 };
 
 template <std::size_t N>
@@ -358,8 +498,7 @@ void connectInputsImpl(SyncType<N>& sync,
  * @param subs Subscriber filters to connect.
  */
 template <std::size_t N>
-void connectInputs(SyncType<N>& sync,
-                   const std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>>& subs) {
+void connectInputs(SyncType<N>& sync, const std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>>& subs) {
   connectInputsImpl<N>(sync, subs, std::make_index_sequence<N>{});
 }
 
@@ -367,8 +506,8 @@ void connectInputs(SyncType<N>& sync,
 
 void PointCloudFusion::setup() {
   // callback for dynamic parameter configuration
-  parameters_callback_ = this->add_on_set_parameters_callback(
-      std::bind(&PointCloudFusion::parametersCallback, this, std::placeholders::_1));
+  parameters_callback_ =
+      this->add_on_set_parameters_callback(std::bind(&PointCloudFusion::parametersCallback, this, std::placeholders::_1));
 
   // create transform buffer and listener
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
@@ -405,8 +544,7 @@ void PointCloudFusion::setup() {
     cloud_subscribers_.push_back(std::move(subscriber));
   }
 
-  RCLCPP_INFO(this->get_logger(),
-              "Configured %zu input subscriber callback groups for %zu input topics",
+  RCLCPP_INFO(this->get_logger(), "Configured %zu input subscriber callback groups for %zu input topics",
               cloud_subscriber_callback_groups_.size(), input_topics_.size());
 
   synchronizer_.reset();
@@ -475,8 +613,7 @@ void PointCloudFusion::setup() {
       link_pubs.push_back(static_cast<const void*>(pub_base->get_publisher_handle().get()));
     }
   }
-  TRACETOOLS_TRACEPOINT(message_link_partial_sync, link_subs.data(), link_subs.size(), link_pubs.data(),
-                        link_pubs.size());
+  TRACETOOLS_TRACEPOINT(message_link_partial_sync, link_subs.data(), link_subs.size(), link_pubs.data(), link_pubs.size());
 }
 
 template <std::size_t N>
@@ -521,8 +658,7 @@ void PointCloudFusion::setupSynchronizer() {
               static_cast<size_t>(N), static_cast<size_t>(sync_queue_size_), max_time_diff_sec_, age_penalty_);
 }
 
-void PointCloudFusion::handleSynchronizedPointClouds(
-    const std::vector<sensor_msgs::msg::PointCloud2::ConstSharedPtr>& msgs) {
+void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_msgs::msg::PointCloud2::ConstSharedPtr>& msgs) {
   if (msgs.empty()) {
     return;
   }
@@ -581,8 +717,7 @@ void PointCloudFusion::handleSynchronizedPointClouds(
                     cpu_processing_end, "cpu_fusion_complete");
 }
 
-bool PointCloudFusion::collectTimingInfo(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
-                                         FusionTiming& timing) const {
+bool PointCloudFusion::collectTimingInfo(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs, FusionTiming& timing) const {
   if (msgs.empty()) {
     return false;
   }
@@ -624,8 +759,7 @@ bool PointCloudFusion::collectTimingInfo(const std::vector<PointCloudMsg::ConstS
 }
 
 PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch(
-    const std::vector<PointCloudMsg::ConstSharedPtr>& msgs, const FusionTiming& timing,
-    std::size_t& valid_point_count) const {
+    const std::vector<PointCloudMsg::ConstSharedPtr>& msgs, const FusionTiming& timing, std::size_t& valid_point_count) const {
   if (msgs.empty()) {
     return nullptr;
   }
@@ -680,22 +814,20 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     copy_plan.reserve(output_fields_.size());
 
     for (const auto& requested_name : output_fields_) {
-      auto iter = std::find_if(
-          input0_fields.begin(), input0_fields.end(),
-          [&requested_name](const sensor_msgs::msg::PointField& field) { return field.name == requested_name; });
+      auto iter =
+          std::find_if(input0_fields.begin(), input0_fields.end(),
+                       [&requested_name](const sensor_msgs::msg::PointField& field) { return field.name == requested_name; });
       if (iter == input0_fields.end()) {
-        RCLCPP_WARN(
-            this->get_logger(),
-            "Requested output field '%s' not present in incoming point cloud; publishing full field set instead.",
-            requested_name.c_str());
+        RCLCPP_WARN(this->get_logger(),
+                    "Requested output field '%s' not present in incoming point cloud; publishing full field set instead.",
+                    requested_name.c_str());
         selection_valid = false;
         break;
       }
 
       const std::size_t datatype_size = pointFieldDatatypeSize(iter->datatype);
       if (datatype_size == 0) {
-        RCLCPP_WARN(this->get_logger(),
-                    "Point field '%s' uses unsupported datatype %u; publishing full field set instead.",
+        RCLCPP_WARN(this->get_logger(), "Point field '%s' uses unsupported datatype %u; publishing full field set instead.",
                     requested_name.c_str(), static_cast<unsigned int>(iter->datatype));
         selection_valid = false;
         break;
@@ -721,8 +853,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
 
     if (!selection_valid || fused_x_offset < 0 || fused_y_offset < 0 || fused_z_offset < 0) {
       if (selection_valid) {
-        RCLCPP_ERROR(this->get_logger(),
-                     "Output field selection must include x, y, and z; publishing full field set instead.");
+        RCLCPP_ERROR(this->get_logger(), "Output field selection must include x, y, and z; publishing full field set instead.");
       }
       use_all_fields = true;
       copy_plan.clear();
@@ -793,6 +924,15 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   valid_point_count = 0;
   std::size_t skipped_inputs = 0;
 
+  // Pre-cache range limits as float to avoid per-point double→float conversion.
+  const bool check_range = range_limits_enable_;
+  const float rl_x_min = static_cast<float>(range_limits_x_min_);
+  const float rl_x_max = static_cast<float>(range_limits_x_max_);
+  const float rl_y_min = static_cast<float>(range_limits_y_min_);
+  const float rl_y_max = static_cast<float>(range_limits_y_max_);
+  const float rl_z_min = static_cast<float>(range_limits_z_min_);
+  const float rl_z_max = static_cast<float>(range_limits_z_max_);
+
   for (const auto& msg : msgs) {
     if (!msg) {
       continue;
@@ -829,7 +969,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     const auto* src_data = msg->data.data();
     const size_t total_points = static_cast<size_t>(msg->width) * static_cast<size_t>(msg->height);
 
-    auto emit_point = [&](const uint8_t* point_ptr, float x, float y, float z) {
+    auto emit_point = [&](const uint8_t* point_ptr, float x, float y, float z, bool overwrite_xyz) {
       if (use_all_fields) {
         std::memcpy(dest_ptr, point_ptr, point_step);
       } else {
@@ -838,16 +978,13 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
         }
       }
 
-      if (apply_transform) {
-        const tf2::Vector3 rotated = rotation * tf2::Vector3(x, y, z) + translation;
+      if (overwrite_xyz) {
         auto* dest_x = reinterpret_cast<float*>(dest_ptr + fused_x_offset);
         auto* dest_y = reinterpret_cast<float*>(dest_ptr + fused_y_offset);
         auto* dest_z = reinterpret_cast<float*>(dest_ptr + fused_z_offset);
-        *dest_x = static_cast<float>(rotated.x());
-        *dest_y = static_cast<float>(rotated.y());
-        *dest_z = static_cast<float>(rotated.z());
-      } else {
-        // XYZ already live in the target frame; copying the raw bytes is enough.
+        *dest_x = x;
+        *dest_y = y;
+        *dest_z = z;
       }
 
       dest_ptr += fused_point_step;
@@ -866,7 +1003,25 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
           continue;
         }
 
-        emit_point(point_ptr, x, y, z);
+        if (!apply_transform) {
+          if (check_range && !pointWithinRange(x, y, z, rl_x_min, rl_x_max, rl_y_min, rl_y_max, rl_z_min, rl_z_max)) {
+            continue;
+          }
+          emit_point(point_ptr, x, y, z, false);
+          continue;
+        }
+
+        const tf2::Vector3 rotated = rotation * tf2::Vector3(x, y, z) + translation;
+        const float transformed_x = static_cast<float>(rotated.x());
+        const float transformed_y = static_cast<float>(rotated.y());
+        const float transformed_z = static_cast<float>(rotated.z());
+
+        if (check_range && !pointWithinRange(transformed_x, transformed_y, transformed_z, rl_x_min, rl_x_max, rl_y_min, rl_y_max,
+                                             rl_z_min, rl_z_max)) {
+          continue;
+        }
+
+        emit_point(point_ptr, transformed_x, transformed_y, transformed_z, true);
       }
       continue;
     }
@@ -888,7 +1043,25 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
         continue;
       }
 
-      emit_point(point_ptr, x, y, z);
+      if (!apply_transform) {
+        if (check_range && !pointWithinRange(x, y, z, rl_x_min, rl_x_max, rl_y_min, rl_y_max, rl_z_min, rl_z_max)) {
+          continue;
+        }
+        emit_point(point_ptr, x, y, z, false);
+        continue;
+      }
+
+      const tf2::Vector3 rotated = rotation * tf2::Vector3(x, y, z) + translation;
+      const float transformed_x = static_cast<float>(rotated.x());
+      const float transformed_y = static_cast<float>(rotated.y());
+      const float transformed_z = static_cast<float>(rotated.z());
+
+      if (check_range && !pointWithinRange(transformed_x, transformed_y, transformed_z, rl_x_min, rl_x_max, rl_y_min, rl_y_max,
+                                           rl_z_min, rl_z_max)) {
+        continue;
+      }
+
+      emit_point(point_ptr, transformed_x, transformed_y, transformed_z, true);
     }
   }
 
@@ -907,18 +1080,20 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   return output;
 }
 
-void PointCloudFusion::publishFusedCloud(PointCloudMsg::UniquePtr cloud, const FusionTiming& timing,
-                                         std::size_t input_count, std::size_t total_points,
+void PointCloudFusion::publishFusedCloud(PointCloudMsg::UniquePtr cloud,
+                                         const FusionTiming& timing,
+                                         std::size_t input_count,
+                                         std::size_t total_points,
                                          std::chrono::steady_clock::time_point callback_start,
                                          std::chrono::steady_clock::time_point processing_start,
-                                         std::chrono::steady_clock::time_point processing_end, const char* event_name) {
+                                         std::chrono::steady_clock::time_point processing_end,
+                                         const char* event_name) {
   // Publish the fused cloud and emit a compact timing summary for observability.
   cloud_publisher_->publish(std::move(cloud));
   const auto publish_end = std::chrono::steady_clock::now();
 
   const double prep_duration_ms = std::chrono::duration<double, std::milli>(processing_start - callback_start).count();
-  const double processing_duration_ms =
-      std::chrono::duration<double, std::milli>(processing_end - processing_start).count();
+  const double processing_duration_ms = std::chrono::duration<double, std::milli>(processing_end - processing_start).count();
   const double publish_duration_ms = std::chrono::duration<double, std::milli>(publish_end - processing_end).count();
   const double e2e_duration_ms = prep_duration_ms + processing_duration_ms + publish_duration_ms;
   const double batch_dt_ms = (timing.latest_stamp - timing.earliest_stamp).seconds() * 1000.0;
@@ -961,10 +1136,34 @@ void PointCloudFusion::validateInputTopicsParameter() const {
   }
 }
 
+void PointCloudFusion::validateRangeLimits() {
+  bool valid = true;
+  if (range_limits_x_min_ >= range_limits_x_max_) {
+    RCLCPP_ERROR(this->get_logger(),
+                 "range_limits.x_min (%.3f) must be less than range_limits.x_max (%.3f); disabling range filtering",
+                 range_limits_x_min_, range_limits_x_max_);
+    valid = false;
+  }
+  if (range_limits_y_min_ >= range_limits_y_max_) {
+    RCLCPP_ERROR(this->get_logger(),
+                 "range_limits.y_min (%.3f) must be less than range_limits.y_max (%.3f); disabling range filtering",
+                 range_limits_y_min_, range_limits_y_max_);
+    valid = false;
+  }
+  if (range_limits_z_min_ >= range_limits_z_max_) {
+    RCLCPP_ERROR(this->get_logger(),
+                 "range_limits.z_min (%.3f) must be less than range_limits.z_max (%.3f); disabling range filtering",
+                 range_limits_z_min_, range_limits_z_max_);
+    valid = false;
+  }
+  if (!valid) {
+    range_limits_enable_ = false;
+  }
+}
+
 #ifdef ENABLE_CUDA
 PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatchCUDA(
-    const std::vector<PointCloudMsg::ConstSharedPtr>& msgs, const FusionTiming& timing,
-    std::size_t& valid_point_count) const {
+    const std::vector<PointCloudMsg::ConstSharedPtr>& msgs, const FusionTiming& timing, std::size_t& valid_point_count) const {
   if (msgs.empty() || !cuda_context_) {
     return nullptr;
   }
@@ -1013,22 +1212,20 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     copy_plan.reserve(output_fields_.size());
 
     for (const auto& requested_name : output_fields_) {
-      auto iter = std::find_if(
-          input0_fields.begin(), input0_fields.end(),
-          [&requested_name](const sensor_msgs::msg::PointField& field) { return field.name == requested_name; });
+      auto iter =
+          std::find_if(input0_fields.begin(), input0_fields.end(),
+                       [&requested_name](const sensor_msgs::msg::PointField& field) { return field.name == requested_name; });
       if (iter == input0_fields.end()) {
-        RCLCPP_WARN(
-            this->get_logger(),
-            "Requested output field '%s' not present in incoming point cloud; publishing full field set instead.",
-            requested_name.c_str());
+        RCLCPP_WARN(this->get_logger(),
+                    "Requested output field '%s' not present in incoming point cloud; publishing full field set instead.",
+                    requested_name.c_str());
         selection_valid = false;
         break;
       }
 
       const std::size_t datatype_size = pointFieldDatatypeSize(iter->datatype);
       if (datatype_size == 0) {
-        RCLCPP_WARN(this->get_logger(),
-                    "Point field '%s' uses unsupported datatype %u; publishing full field set instead.",
+        RCLCPP_WARN(this->get_logger(), "Point field '%s' uses unsupported datatype %u; publishing full field set instead.",
                     requested_name.c_str(), static_cast<unsigned int>(iter->datatype));
         selection_valid = false;
         break;
@@ -1057,8 +1254,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
 
     if (!selection_valid || fused_x_offset < 0 || fused_y_offset < 0 || fused_z_offset < 0) {
       if (selection_valid) {
-        RCLCPP_ERROR(this->get_logger(),
-                     "Output field selection must include x, y, and z; publishing full field set instead.");
+        RCLCPP_ERROR(this->get_logger(), "Output field selection must include x, y, and z; publishing full field set instead.");
       }
       use_all_fields = true;
       copy_plan.clear();
@@ -1121,8 +1317,12 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
 
   // Reset batch with fixed slots
   // Note: total_input_capacity is for input buffers, but output may be smaller due to downsampling
-  if (!cuda_context_->resetBatch(total_input_capacity, slot_size, point_step, fused_point_step, x_offset, y_offset,
-                                 z_offset, fused_x_offset, fused_y_offset, fused_z_offset, copy_plan)) {
+  if (!cuda_context_->resetBatch(total_input_capacity, slot_size, point_step, fused_point_step, x_offset, y_offset, z_offset,
+                                 fused_x_offset, fused_y_offset, fused_z_offset, copy_plan,
+                                 static_cast<float>(range_limits_x_min_), static_cast<float>(range_limits_x_max_),
+                                 static_cast<float>(range_limits_y_min_), static_cast<float>(range_limits_y_max_),
+                                 static_cast<float>(range_limits_z_min_), static_cast<float>(range_limits_z_max_),
+                                 range_limits_enable_)) {
     RCLCPP_ERROR(this->get_logger(), "CUDA resetBatch failed");
     return nullptr;
   }
@@ -1171,11 +1371,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     const uint8_t* data_ptr = msg->data.data();
 
     // Pass desired_points for strided sampling (0 = all points)
-    const int desired_points =
-        (fixed_points_per_input_cloud_ > 0) ? static_cast<int>(fixed_points_per_input_cloud_) : 0;
+    const int desired_points = (fixed_points_per_input_cloud_ > 0) ? static_cast<int>(fixed_points_per_input_cloud_) : 0;
 
-    if (!cuda_context_->addCloud(data_ptr, num_points, rotation_matrix, translation, apply_transform, i,
-                                 desired_points)) {
+    if (!cuda_context_->addCloud(data_ptr, num_points, rotation_matrix, translation, apply_transform, i, desired_points)) {
       RCLCPP_ERROR(this->get_logger(), "CUDA addCloud failed");
       continue;
     }

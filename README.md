@@ -23,7 +23,7 @@ Run the node with the packaged launch file and parameter file.
 ros2 launch point_cloud_fusion point_cloud_fusion.launch.py
 ```
 
-Configure input topics, transport hints, synchronization, and output behavior in [`point_cloud_fusion/config/params.yml`](point_cloud_fusion/config/params.yml).
+Configure input topics, transport hints, synchronization, range limits, and output behavior in [`point_cloud_fusion/config/params.yml`](point_cloud_fusion/config/params.yml).
 
 ## Development
 

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <chrono>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -66,9 +67,13 @@ class PointCloudFusion : public rclcpp::Node {
    * @param additional_constraints additional constraints description
    */
   template <typename T>
-  void declareAndLoadParameter(const std::string& name, T& param, const std::string& description,
-                               const bool add_to_auto_reconfigurable_params = true, const bool is_required = false,
-                               const bool read_only = false, const std::optional<double>& from_value = std::nullopt,
+  void declareAndLoadParameter(const std::string& name,
+                               T& param,
+                               const std::string& description,
+                               const bool add_to_auto_reconfigurable_params = true,
+                               const bool is_required = false,
+                               const bool read_only = false,
+                               const std::optional<double>& from_value = std::nullopt,
                                const std::optional<double>& to_value = std::nullopt,
                                const std::optional<double>& step_value = std::nullopt,
                                const std::string& additional_constraints = "");
@@ -139,11 +144,13 @@ class PointCloudFusion : public rclcpp::Node {
    * @return Fused point cloud.
    */
   PointCloudMsg::UniquePtr fusePointCloudBatch(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
-                                               const FusionTiming& timing, std::size_t& valid_point_count) const;
+                                               const FusionTiming& timing,
+                                               std::size_t& valid_point_count) const;
 
 #ifdef ENABLE_CUDA
   PointCloudMsg::UniquePtr fusePointCloudBatchCUDA(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
-                                                   const FusionTiming& timing, std::size_t& valid_point_count) const;
+                                                   const FusionTiming& timing,
+                                                   std::size_t& valid_point_count) const;
 #endif
 
   /**
@@ -158,10 +165,14 @@ class PointCloudFusion : public rclcpp::Node {
    * @param processing_end Time when fusion processing ended.
    * @param event_name Trace event name for the selected backend.
    */
-  void publishFusedCloud(PointCloudMsg::UniquePtr cloud, const FusionTiming& timing, std::size_t input_count,
-                         std::size_t total_points, std::chrono::steady_clock::time_point callback_start,
+  void publishFusedCloud(PointCloudMsg::UniquePtr cloud,
+                         const FusionTiming& timing,
+                         std::size_t input_count,
+                         std::size_t total_points,
+                         std::chrono::steady_clock::time_point callback_start,
                          std::chrono::steady_clock::time_point processing_start,
-                         std::chrono::steady_clock::time_point processing_end, const char* event_name);
+                         std::chrono::steady_clock::time_point processing_end,
+                         const char* event_name);
 
  private:
   enum class OutputStampMode { Latest, Earliest, Mean, Input0 };
@@ -176,6 +187,7 @@ class PointCloudFusion : public rclcpp::Node {
    * @brief Validate that the configured input topic list is usable.
    */
   void validateInputTopicsParameter() const;
+  void validateRangeLimits();
 
   static constexpr int32_t kMinSyncQueueSize = 1;
   static constexpr int32_t kMaxSyncQueueSize = 1000;
@@ -186,6 +198,10 @@ class PointCloudFusion : public rclcpp::Node {
   static constexpr std::size_t kMaxInputTopics = 9;
   static constexpr const char* kDefaultTransportHint = "raw";
   static constexpr const char* kAllowedOutputStampModes = "latest, earliest, mean, input0";
+  static constexpr double kMinRangeXY = -1000.0;
+  static constexpr double kMaxRangeXY = 1000.0;
+  static constexpr double kMinRangeZ = -20.0;
+  static constexpr double kMaxRangeZ = 20.0;
 
   /**
    * @brief ROS parameters
@@ -197,6 +213,13 @@ class PointCloudFusion : public rclcpp::Node {
   // Optional: limit each input cloud to this many points before processing.
   // 0 = disabled (use actual point count per cloud)
   int64_t fixed_points_per_input_cloud_ = 0;
+  bool range_limits_enable_ = false;
+  double range_limits_x_min_ = -1000.0;
+  double range_limits_x_max_ = 1000.0;
+  double range_limits_y_min_ = -1000.0;
+  double range_limits_y_max_ = 1000.0;
+  double range_limits_z_min_ = -20.0;
+  double range_limits_z_max_ = 20.0;
   bool use_cuda_ = true;
   OutputStampMode output_stamp_mode_ = OutputStampMode::Earliest;
   std::string output_stamp_mode_param_ = "earliest";

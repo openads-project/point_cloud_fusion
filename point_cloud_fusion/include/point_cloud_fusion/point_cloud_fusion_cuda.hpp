@@ -32,13 +32,13 @@ struct CudaFieldCopy {
 
 // Metadata struct for device consumption
 struct CloudMetadata {
-  int num_points;           // Actual number of points in this cloud
-  int num_samples;          // Number of samples to take (for strided sampling)
-  float stride;             // Stride for uniform sampling (>= 1.0)
-  int apply_transform;      // bool as int for alignment
+  int num_points;       // Actual number of points in this cloud
+  int num_samples;      // Number of samples to take (for strided sampling)
+  float stride;         // Stride for uniform sampling (>= 1.0)
+  int apply_transform;  // bool as int for alignment
   float rotation[9];
   float translation[3];
-  int pad;                  // alignment padding
+  int pad;  // alignment padding
 };
 
 /**
@@ -72,9 +72,24 @@ class CudaTransformContext {
    * @param copy_plan Vector of field copy operations
    * @return true on success
    */
-  bool resetBatch(size_t total_max_points, size_t max_single_cloud_points, size_t input_point_step,
-                  size_t output_point_step, int src_x_offset, int src_y_offset, int src_z_offset, int dst_x_offset,
-                  int dst_y_offset, int dst_z_offset, const std::vector<CudaFieldCopy>& copy_plan);
+  bool resetBatch(size_t total_max_points,
+                  size_t max_single_cloud_points,
+                  size_t input_point_step,
+                  size_t output_point_step,
+                  int src_x_offset,
+                  int src_y_offset,
+                  int src_z_offset,
+                  int dst_x_offset,
+                  int dst_y_offset,
+                  int dst_z_offset,
+                  const std::vector<CudaFieldCopy>& copy_plan,
+                  float x_min,
+                  float x_max,
+                  float y_min,
+                  float y_max,
+                  float z_min,
+                  float z_max,
+                  bool range_enable);
 
   /**
    * @brief Add a point cloud to the current batch
@@ -88,8 +103,13 @@ class CudaTransformContext {
    * @param desired_points Desired number of points to sample (0 = all points, uses strided sampling)
    * @return true on success, false on error
    */
-  bool addCloud(const uint8_t* input_data, size_t num_points, const float* rotation_matrix_host,
-                const float* translation_host, bool apply_transform, size_t slot_index, int desired_points = 0);
+  bool addCloud(const uint8_t* input_data,
+                size_t num_points,
+                const float* rotation_matrix_host,
+                const float* translation_host,
+                bool apply_transform,
+                size_t slot_index,
+                int desired_points = 0);
 
   /**
    * @brief Get the accumulated results from the batch
@@ -136,6 +156,13 @@ class CudaTransformContext {
   int current_dst_x_offset_;
   int current_dst_y_offset_;
   int current_dst_z_offset_;
+  float current_x_min_;
+  float current_x_max_;
+  float current_y_min_;
+  float current_y_max_;
+  float current_z_min_;
+  float current_z_max_;
+  bool current_range_enable_;
   int num_copy_ops_;
 
   // We keep a host vector of metadata to fill before upload

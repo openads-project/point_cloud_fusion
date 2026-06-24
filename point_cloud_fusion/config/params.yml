@@ -14,6 +14,14 @@
     age_penalty: 0.1 # Optional ApproximateTime tuning
     use_cuda: true # Enable CUDA acceleration (requires CUDA build)
     fixed_points_per_input_cloud: 0 # 0=disabled
+    range_limits:
+      enable: false # Enable XYZ range filtering in target_frame
+      # x_min: -1000.0 # Minimum x coordinate to keep [m] (in target_frame)
+      # x_max: 1000.0 # Maximum x coordinate to keep [m] (in target_frame)
+      # y_min: -1000.0 # Minimum y coordinate to keep [m] (in target_frame)
+      # y_max: 1000.0 # Maximum y coordinate to keep [m] (in target_frame)
+      # z_min: -20.0 # Minimum z coordinate to keep [m] (in target_frame)
+      # z_max: 20.0 # Maximum z coordinate to keep [m] (in target_frame)
     # output_fields: # Determine which fields to include in the output point cloud (all if not set)
     #   - "x"
     #   - "y"
