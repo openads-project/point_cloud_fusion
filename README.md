@@ -4,28 +4,45 @@
   <a href="https://www.ros.org"><img src="https://img.shields.io/badge/ROS 2-jazzy-22314e"/></a>
 </p>
 
-This repository provides a ROS 2 point-cloud fusion node for automated driving perception stacks. The node subscribes to multiple `sensor_msgs/msg/PointCloud2` streams, transforms them into a common target frame, and publishes one fused point cloud through `point_cloud_transport`.
+This repository provides a ROS 2 point-cloud fusion node. The node subscribes to multiple `sensor_msgs/msg/PointCloud2` streams, transforms them into a common target frame, and publishes one fused point cloud through `point_cloud_transport`.
 
-The package supports CPU processing and optional CUDA acceleration for high-throughput multi-LiDAR fusion.
+The package supports CPU processing and optional CUDA accelerated fusion.
 
 <p align="center">
-  <strong><a href="#-quick-start">Quick Start</a></strong> - <strong><a href="#-development">Development</a></strong> - <strong><a href="#-documentation">Documentation</a></strong>
+  <strong>🚀 <a href="#-quick-start">Quick Start</a></strong> • <strong>💻 <a href="#-development">Development</a></strong> • <strong>📝 <a href="#-documentation">Documentation</a></strong>
 </p>
+
 
 > [!IMPORTANT]
 > This repository is part of [***OpenADS***](https://github.com/openads-project), the *Open Automated Driving Systems* project. *OpenADS* and its modules have been initiated and are currently being maintained by the [**Institute for Automotive Engineering (ika) at RWTH Aachen University**](https://www.ika.rwth-aachen.de/de/).
 
-## Quick Start
 
-Run the node with the packaged launch file and parameter file.
+## 🚀 Quick Start
 
-```bash
-ros2 launch point_cloud_fusion point_cloud_fusion.launch.py
-```
+  <video src="./assets/fusion_teaser.mp4" controls autoplay loop muted plays inline width="720" style="max-width: 100%;">
+    <a href="./assets/fusion_teaser.mp4">fusion demo video</a> directly.
+  </video>
 
-Configure input topics, transport hints, synchronization, range limits, and output behavior in [`point_cloud_fusion/config/params.yml`](point_cloud_fusion/config/params.yml).
+1. Launch the [`demo/docker-compose.yml`](demo/docker-compose.yml) setup. This
+   starts PCD playback, point-cloud fusion, RViz, and the runtime parameter GUI:
 
-## Development
+    ```bash
+    cd demo
+    xhost +local: # allow GUI forwarding from containers
+    docker compose up
+    ```
+
+3. Inspect `/demo/points/fused` in RViz and adjust runtime parameters in
+   `rqt_reconfigure`.
+
+4. Stop the demo with `Ctrl+C`, remove its containers, and revoke GUI access:
+
+    ```bash
+    docker compose down
+    xhost -local:
+    ```
+
+## 💻 Development
 
 ### Set up Development Environment
 
@@ -65,18 +82,29 @@ colcon test
 colcon test-result --verbose
 ```
 
-## Documentation
 
-Package and node interfaces are documented in the respective package READMEs listed below.
+## 📝 Documentation
+
+Package and node interfaces are documented in the respective package READMEs listed below. Implementation details are found in the [Source Code Documentation](https://fb-fi.pages.ika.rwth-aachen.de/its-modules/perception/point_cloud_fusion).
 
 | Package | Description |
 | --- | --- |
-| [point_cloud_fusion](point_cloud_fusion/README.md) | Fuses multiple point clouds into one common frame |
+| [point_cloud_fusion](point_cloud_fusion/README.md) | Fuses multiple point clouds into a single point cloud with common target frame. |
 
-## Licensing
+## ⚖️ Licensing
 
 The source code in this repository is licensed under Apache-2.0, see [LICENSE](LICENSE). Container images provided by this repository may contain third-party software shipped with their own license terms.
 
-## Acknowledgements
+## 🙏 Acknowledgements
 
-Development and maintenance of this repository are supported by the Institute for Automotive Engineering (ika) at RWTH Aachen University.
+Development and maintenance of this repository are supported by the following projects. We acknowledge the funding of the respective institutions.
+
+| Project | Funding Institution | Grant Number |
+| --- | --- | --- |
+| [AIGGREGATE](https://aiggregate.eu/) | 🇪🇺 European Union | 101202457 |
+
+<p>
+  <img src="https://ec.europa.eu/regional_policy/images/information-sources/logo-download-center/eu_funded_en.jpg" height=70>
+</p>
+
+<sup><sub>Funded by the European Union. Views and opinions expressed are however those of the author(s) only and do not necessarily reflect those of the European Union or the European Climate, Infrastructure and Environment Executive Agency (CINEA). Neither the European Union nor CINEA can be held responsible for them.</sup></sup>

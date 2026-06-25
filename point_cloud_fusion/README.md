@@ -1,63 +1,69 @@
-# point_cloud_fusion
+# `point_cloud_fusion`
 
-The package provides a C++ ROS 2 component node that subscribes to multiple point-cloud topics, transforms all point clouds into a common target frame, and publishes a single fused point cloud. It supports CPU fusion and optional CUDA acceleration.
+Fuses multiple point clouds into a single point cloud with common target frame.
 
-## Node
+## Nodes
 
-| Package | Node | Description |
-| --- | --- | --- |
-| `point_cloud_fusion` | `point_cloud_fusion` | ROS 2 node for point-cloud fusion |
+### `point_cloud_fusion`
 
-### Subscribed Topics
+Subscribes to the point-cloud topics configured in `input_topics`, transforms
+them into `target_frame`, and publishes one fused point cloud. The input and
+output use `point_cloud_transport`, allowing transport plugins to be selected
+through the node parameters.
 
-| Topic | Type | Description |
-| --- | --- | --- |
-| Configured in `input_topics` | `sensor_msgs/msg/PointCloud2` | Point clouds to transform and fuse. |
-
-### Published Topics
-
-| Topic | Type | Description |
-| --- | --- | --- |
-| `~/output` | `sensor_msgs/msg/PointCloud2` | Fused point cloud. Managed by `point_cloud_transport`, so transport-specific output topics can also be created. |
-
-## Launch File Usage
-
-The provided launch file supports launch arguments for node naming, parameters, logging, simulation time, tracing, and topic remapping.
-
-```bash
-ros2 launch point_cloud_fusion point_cloud_fusion.launch.py \
-    namespace:=/perception \
-    params:=/docker-ros/ws/src/target/point_cloud_fusion/config/params.yml
+```mermaid
+flowchart LR
+    NODE("point_cloud_fusion")
+    S0:::hidden -->|"input_topics_[i]"| NODE
+    NODE -->|~/point_cloud| P0:::hidden
+    classDef hidden display: none;
 ```
 
-### Launch Arguments
+#### Subscribed Topics
 
-| Argument | Type | Description |
+| Topic | Type | Description |
 | --- | --- | --- |
-| `name` | `string` | Node name. Default: `point_cloud_fusion`. |
-| `namespace` | `string` | Node namespace. Default: empty. |
-| `params` | `string` | Path to parameter file. Default: package `config/params.yml`. |
-| `log_level` | `string` | ROS logging level (`debug`, `info`, `warn`, `error`, `fatal`). Default: `info`. |
-| `use_sim_time` | `bool` | Use simulation clock. Default: `false`. |
-| `trace` | `bool` | Enable ROS tracing. Default: `false`. |
-| `point_cloud_topic` | `string` | Remap for `~/point_cloud`. Default: `~/point_cloud`. |
+| `input_topics_[i]` | `sensor_msgs/msg/PointCloud2` | Point-cloud topics to fuse |
 
-## Parameters
+#### Published Topics
 
-| Parameter | Type | Description |
+| Topic | Type | Description |
 | --- | --- | --- |
-| `target_frame` | `string` | Target frame to which input point clouds are transformed before fusion. Required. |
-| `input_topics` | `string array` | Input point-cloud topics. Configure between 1 and 9 entries. Required. |
-| `input_transport_hints` | `string array` | Transport hints corresponding to each input topic. May be omitted; unspecified entries default to `raw`. |
-| `sync_queue_size` | `integer` | Queue depth for the approximate-time synchronizer. Default: `3`. |
-| `output_queue_size` | `integer` | Queue depth for the fused output publisher. Default: `10`. |
-| `max_time_diff_sec` | `double` | Maximum allowed timestamp difference across synchronized input clouds. Default: `0.05`. |
-| `age_penalty` | `double` | ApproximateTime age penalty. Default: `0.1`. |
-| `output_fields` | `string array` | Optional subset of point fields to keep in the fused cloud. Empty publishes all incoming fields. |
-| `output_stamp_mode` | `string` | Fused header timestamp mode: `earliest`, `latest`, `mean`, or `input0`. Default: `earliest`. |
-| `use_cuda` | `bool` | Enable CUDA acceleration when compiled with CUDA support. Default: `true`. |
-| `fixed_points_per_input_cloud` | `integer` | Runtime-reconfigurable limit for valid points processed per input cloud. `0` disables the limit. Updates apply atomically between fusion batches. Valid range: `[0, 10000000]`. Default: `0`. |
+| `~/point_cloud` | `sensor_msgs/msg/PointCloud2` | Output topic for the fused point cloud |
 
-## Point-Cloud Transport
+#### Parameters
 
-The fused output publisher is managed by `point_cloud_transport`. Configure enabled output transport plugins and their plugin-specific parameters in the node parameter file.
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `target_frame` | `string` | `"base_link"` | Frame into which all input point clouds are transformed before fusion |
+| `input_topics` | `string[]` | `[]` | Point-cloud topics to fuse |
+| `input_transport_hints` | `string[]` | `[]` | Transport hint for each input topic; unspecified entries use raw |
+| `sync_queue_size` | `int` | `3` | Queue depth for approximate-time synchronization |
+| `output_queue_size` | `int` | `10` | Queue depth for the fused output publisher |
+| `output_fields` | `string[]` | `[]` | Fields retained in the fused output; an empty list retains all input fields |
+| `output_stamp_mode` | `string` | `"earliest"` | Fused timestamp selection: earliest, latest, mean, or input0 |
+| `fixed_points_per_input_cloud` | `int` | `0` | Runtime-reconfigurable maximum valid point count per input cloud; 0 disables the limit |
+| `use_cuda` | `bool` | `true` | Runtime-reconfigurable backend selection; true uses CUDA and false uses CPU |
+| `range_limits.enable` | `bool` | `false` | Enable XYZ range filtering after transformation into target_frame |
+| `range_limits.x_min` | `float` | `-1000.0` | Minimum x coordinate in target_frame to keep [m] |
+| `range_limits.x_max` | `float` | `1000.0` | Maximum x coordinate in target_frame to keep [m] |
+| `range_limits.y_min` | `float` | `-1000.0` | Minimum y coordinate in target_frame to keep [m] |
+| `range_limits.y_max` | `float` | `1000.0` | Maximum y coordinate in target_frame to keep [m] |
+| `range_limits.z_min` | `float` | `-20.0` | Minimum z coordinate in target_frame to keep [m] |
+| `range_limits.z_max` | `float` | `20.0` | Maximum z coordinate in target_frame to keep [m] |
+| `max_time_diff_sec` | `float` | `0.05` | Maximum timestamp spread across a synchronized input batch in seconds |
+| `age_penalty` | `float` | `0.1` | Age penalty used by the approximate-time synchronizer |
+
+## Launch Files
+
+### [`point_cloud_fusion.launch.py`](launch/point_cloud_fusion.launch.py)
+
+| Argument | Default | Description |
+| --- | --- | --- |
+| `point_cloud_topic` | `"~/point_cloud"` | Output topic for the fused point cloud |
+| `name` | `"point_cloud_fusion"` | Node name. |
+| `namespace` | `""` | Node namespace. |
+| `params` | `os.path.join(get_package_share_directory("point_cloud_fusion"), "config", "params.yml")` | Path to the parameter file. |
+| `log_level` | `"info"` | ROS logging level (debug, info, warn, error, fatal) |
+| `use_sim_time` | `"false"` | Use the simulation clock. |
+| `trace` | `"false"` | Enable ROS tracing. |
