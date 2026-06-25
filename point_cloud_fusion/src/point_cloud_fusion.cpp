@@ -75,14 +75,14 @@ namespace point_cloud_fusion {
 // clang-format off
 PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("point_cloud_fusion", options) {
   this->declareAndLoadParameter("target_frame", target_frame_,                   // name
-                                "Target frame of fused point cloud",             // description
+                                "Frame into which all input point clouds are transformed before fusion",  // description
                                 false,                                           // add_to_auto_reconfigurable_params
                                 true,                                            // is_required
                                 true,                                            // read_only
                                 std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
                                 "Must be set.");                                 // additional_constraints
   this->declareAndLoadParameter("input_topics", input_topics_,                   // name
-                                "List of input point cloud topics",              // description
+                                "Point-cloud topics to fuse",                    // description
                                 false,                                           // add_to_auto_reconfigurable_params
                                 true,                                            // is_required
                                 true,                                            // read_only
@@ -90,7 +90,7 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 "Must configure between 1 and " + std::to_string(kMaxInputTopics) + " topics");
   validateInputTopicsParameter();
   this->declareAndLoadParameter("input_transport_hints", input_transport_hints_, // name
-                                "List of transport hints (one per input)",       // description
+                                "Transport hint for each input topic; unspecified entries use raw",  // description
                                 false,                                           // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
                                 true,                                            // read_only
@@ -98,7 +98,7 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 "Length must be zero or match input_topics; unspecified entries default to '" +
                                     std::string(kDefaultTransportHint) + "'.");  // additional_constraints
   this->declareAndLoadParameter("sync_queue_size", sync_queue_size_,             // name
-                                "Queue size for message_filters synchronizer",   // description
+                                "Queue depth for approximate-time synchronization",  // description
                                 false,                                           // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
                                 true,                                            // read_only
@@ -107,7 +107,7 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 kStepSizeSyncQueueSize,                          // step_value
                                 std::string("Must be >= ") + std::to_string(kMinSyncQueueSize));  // additional_constraints
   this->declareAndLoadParameter("output_queue_size", output_queue_size_,         // name
-                                "Queue size for fused output publisher",         // description
+                                "Queue depth for the fused output publisher",    // description
                                 false,                                           // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
                                 true,                                            // read_only
@@ -117,14 +117,14 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 std::string("Must be >= ") + std::to_string(kMinOutputQueueSize)); // additional_constraints
   this->declareAndLoadParameter(
       "output_fields", output_fields_,                                           // name
-      "Fields to include in the fused output (empty publishes all fields)",      // description
+      "Fields retained in the fused output; an empty list retains all input fields",  // description
       true,                                                                      // add_to_auto_reconfigurable_params
       false,                                                                     // is_required
       false,                                                                     // read_only
       std::nullopt, std::nullopt, std::nullopt,                                  // from_value, to_value, step_value
       "Typical fields include: x, y, z, intensity, t, reflectivity, ring, ambient, range.");  // additional_constraints
   this->declareAndLoadParameter("output_stamp_mode", output_stamp_mode_param_,   // name
-                                std::string("Timestamp to assign to fused cloud (") + kAllowedOutputStampModes + ")",
+                                "Fused timestamp selection: earliest, latest, mean, or input0",
                                 false,                                           // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
                                 true,                                            // read_only
@@ -132,7 +132,7 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 std::string("Allowed values: ") + kAllowedOutputStampModes); // additional_constraints
   // Allow user to optionally limit the per-cloud point count to a maximum
   this->declareAndLoadParameter("fixed_points_per_input_cloud", fixed_points_per_input_cloud_,
-                                "If >0, limit each input cloud to this many valid points before fusing",
+                                "Runtime-reconfigurable maximum valid point count per input cloud; 0 disables the limit",
                                 true,                                            // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
                                 false,                                           // read_only
@@ -141,14 +141,14 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 kStepSizeFixedPointsPerInputCloud,               // step_value
                                 "0 = disabled; reasonable range is 0 to 10,000,000 points per input cloud");
   this->declareAndLoadParameter("use_cuda", use_cuda_,                           // name
-                                "Enable CUDA acceleration if available",         // description
+                                "Runtime-reconfigurable backend selection; true uses CUDA and false uses CPU",
                                 true,                                            // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
                                 false,                                           // read_only
                                 std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
                                 "Runtime changes apply between fusion batches.");  // additional_constraints
   this->declareAndLoadParameter("range_limits.enable", range_limits_enable_,     // name
-                                "Enable XYZ range filtering in target_frame",    // description
+                                "Enable XYZ range filtering after transformation into target_frame",
                                 true,                                            // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
                                 false,                                           // read_only
@@ -210,14 +210,14 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 "Must be greater than range_limits.z_min.");     // additional_constraints
   validateRangeLimits();
   this->declareAndLoadParameter("max_time_diff_sec", max_time_diff_sec_,         // name
-                                "Max time diff for synchronization (seconds)",   // description
+                                "Maximum timestamp spread across a synchronized input batch in seconds",
                                 false,                                           // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
                                 true,                                            // read_only
                                 0.0, std::nullopt, std::nullopt,                 // from_value, to_value, step_value
                                 "Must be non-negative");                         // additional_constraints
   this->declareAndLoadParameter("age_penalty", age_penalty_,                     // name
-                                "ApproximateTime age penalty",                   // description
+                                "Age penalty used by the approximate-time synchronizer",
                                 false,                                           // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
                                 true,                                            // read_only
