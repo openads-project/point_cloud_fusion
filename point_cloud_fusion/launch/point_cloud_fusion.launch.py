@@ -18,7 +18,11 @@ def generate_launch_description():
     """Generate the point_cloud_fusion launch description."""
 
     remappable_topics = [
-        DeclareLaunchArgument("point_cloud_topic", default_value="~/point_cloud"),
+        DeclareLaunchArgument(
+            "point_cloud_topic",
+            default_value="~/point_cloud",
+            description="Output topic for the fused point cloud",
+        ),
     ]
 
     args = [
@@ -60,8 +64,10 @@ def generate_launch_description():
         ),
     ]
 
-    return LaunchDescription([
-        *args,
-        SetParameter("use_sim_time", LaunchConfiguration("use_sim_time")),
-        *nodes,
-    ])
+    return LaunchDescription(
+        [
+            *args,
+            SetParameter("use_sim_time", LaunchConfiguration("use_sim_time")),
+            *nodes,
+        ]
+    )
