@@ -19,8 +19,7 @@ The package supports CPU processing and optional CUDA accelerated fusion.
 
 ## 🚀 Quick Start
 
-  <video src="./assets/fusion_teaser.mp4" controls autoplay loop muted plays inline width="720" style="max-width: 100%;">
-    <a href="./assets/fusion_teaser.mp4">fusion demo video</a> directly.
+  <video src="https://github.com/user-attachments/assets/e19c19f9-0e47-4ca5-a893-c3d78b458296" width="720" style="max-width: 100%;">
   </video>
 
 1. Launch the [`demo/docker-compose.yml`](demo/docker-compose.yml) setup. This
