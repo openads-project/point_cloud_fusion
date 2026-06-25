@@ -1,0 +1,35 @@
+/**:
+  ros__parameters:
+    target_frame: base_link
+    input_topics:
+      - /demo/points/fl
+      - /demo/points/fr
+      - /demo/points/rl
+      - /demo/points/rr
+    input_transport_hints:
+      - raw
+      - raw
+      - raw
+      - raw
+
+    sync_queue_size: 3
+    max_time_diff_sec: 0.01
+    output_queue_size: 1
+    age_penalty: 0.1
+    use_cuda: true
+    fixed_points_per_input_cloud: 50000
+    output_fields: # Determine which fields to include in the output point cloud (all if not set)
+      - "x"
+      - "y"
+      - "z"
+      - "intensity"
+      - "reflectivity"
+    range_limits:
+      enable: false
+      x_min: -1000.0
+      x_max: 1000.0
+      y_min: -1000.0
+      y_max: 1000.0
+      z_min: -20.0
+      z_max: 20.0
+    output_stamp_mode: earliest

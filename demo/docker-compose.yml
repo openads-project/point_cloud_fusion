@@ -1,0 +1,81 @@
+name: point-cloud-fusion-demo
+
+x-ros-common-env: &ros_common_env
+  RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+
+x-gpu-reservation: &gpu_reservation
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: all
+          capabilities: [gpu]
+
+services:
+  pcd-playback:
+    build:
+      context: ./pcd-playback
+    environment:
+      <<: *ros_common_env
+      PCD_DIR: /data
+      PCD_PUBLISH_RATE_HZ: ${PCD_PUBLISH_RATE_HZ:-10.0}
+    volumes:
+      - ./pcds:/data:ro
+      - ./pcd-playback/pcd_publisher.py:/opt/demo/pcd_publisher.py:ro
+
+  point-cloud-fusion:
+    image: gitlab.ika.rwth-aachen.de:5050/fb-fi/its-modules/perception/point_cloud_fusion:latest_openads_ci-amd64
+    pull_policy: always
+    depends_on: [pcd-playback]
+    deploy:
+      <<: *gpu_reservation
+    environment:
+      <<: *ros_common_env
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      RCUTILS_LOGGING_BUFFERED_STREAM: "0"
+      RCUTILS_LOGGING_USE_STDOUT: "1"
+    volumes:
+      - ./point_cloud_fusion.demo.params.yml:/docker-ros/ws/install/point_cloud_fusion/share/point_cloud_fusion/config/params.yml:ro
+    command:
+      - bash
+      - -lc
+      - |
+        exec ros2 run point_cloud_fusion point_cloud_fusion --ros-args \
+          --params-file /docker-ros/ws/install/point_cloud_fusion/share/point_cloud_fusion/config/params.yml \
+          -r __ns:=/demo \
+          -r __node:=point_cloud_fusion \
+          -r /demo/point_cloud_fusion/point_cloud:=/demo/points/fused \
+          --log-level info \
+          --log-level demo.point_cloud_fusion:=${FUSION_LOG_LEVEL:-debug}
+
+  ros-parameter-gui:
+    image: gitlab.ika.rwth-aachen.de:5050/fb-fi/its-modules/monitoring/ros-monitoring:v1.0.0
+    depends_on: [point-cloud-fusion]
+    environment:
+      <<: *ros_common_env
+      DISPLAY: ${DISPLAY}
+      QT_X11_NO_MITSHM: "1"
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command: >
+      bash -lc "
+      rqt --standalone rqt_reconfigure --ros-args -r __node:=ros_parameter_gui
+      "
+
+  rviz:
+    image: gitlab.ika.rwth-aachen.de:5050/fb-fi/its-modules/monitoring/ros-monitoring:v1.0.0
+    depends_on: [point-cloud-fusion]
+    deploy:
+      <<: *gpu_reservation
+    environment:
+      <<: *ros_common_env
+      DISPLAY: ${DISPLAY}
+      QT_X11_NO_MITSHM: "1"
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./rviz/config.rviz:/root/.rviz2/config.rviz
+    command: >
+      bash -lc "
+      rviz2 -d /root/.rviz2/config.rviz --ros-args -r __node:=rviz
+      "
