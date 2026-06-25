@@ -12,7 +12,7 @@
     max_time_diff_sec: 0.05 # Maximum allowed timestamp difference (seconds) across inputs
     output_queue_size: 10 # Queue depth for fused output publisher
     age_penalty: 0.1 # Optional ApproximateTime tuning
-    use_cuda: true # Enable CUDA acceleration (requires CUDA build)
+    use_cuda: true # Runtime-reconfigurable CPU/CUDA backend selection (requires CUDA build for true)
     fixed_points_per_input_cloud: 0 # 0=disabled
     range_limits:
       enable: false # Enable XYZ range filtering in target_frame

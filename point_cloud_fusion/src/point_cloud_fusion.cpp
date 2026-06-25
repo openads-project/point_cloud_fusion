@@ -142,11 +142,11 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 "0 = disabled; reasonable range is 0 to 10,000,000 points per input cloud");
   this->declareAndLoadParameter("use_cuda", use_cuda_,                           // name
                                 "Enable CUDA acceleration if available",         // description
-                                false,                                           // add_to_auto_reconfigurable_params
+                                true,                                            // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
-                                true,                                            // read_only
+                                false,                                           // read_only
                                 std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
-                                "Default: true");                                // additional_constraints
+                                "Runtime changes apply between fusion batches.");  // additional_constraints
   this->declareAndLoadParameter("range_limits.enable", range_limits_enable_,     // name
                                 "Enable XYZ range filtering in target_frame",    // description
                                 true,                                            // add_to_auto_reconfigurable_params
@@ -228,21 +228,26 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
   configureOutputStampMode(output_stamp_mode_param_);
 
 #ifdef ENABLE_CUDA
-  if (use_cuda_) {
-    // Initialize CUDA context
-    try {
-      cuda_context_ = std::make_unique<cuda::CudaTransformContext>();
+  // Keep the CUDA context available even when starting in CPU mode so the
+  // backend can be switched safely at runtime.
+  try {
+    cuda_context_ = std::make_unique<cuda::CudaTransformContext>();
+    if (use_cuda_) {
       RCLCPP_INFO(this->get_logger(), "CUDA acceleration enabled");
-    } catch (const std::exception& e) {
-      RCLCPP_ERROR(this->get_logger(), "Failed to initialize CUDA context: %s", e.what());
-      RCLCPP_WARN(this->get_logger(), "Falling back to CPU-only implementation");
-      cuda_context_.reset();
+    } else {
+      RCLCPP_INFO(this->get_logger(), "CUDA context initialized; using CPU backend by parameter");
     }
-  } else {
-    RCLCPP_INFO(this->get_logger(), "CUDA disabled by parameter; using CPU-only implementation");
+  } catch (const std::exception& e) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to initialize CUDA context: %s", e.what());
+    RCLCPP_WARN(this->get_logger(), "Falling back to CPU-only implementation");
+    cuda_context_.reset();
+    use_cuda_ = false;
+    this->set_parameter(rclcpp::Parameter("use_cuda", false));
   }
 #else
   RCLCPP_INFO(this->get_logger(), "CUDA support not compiled, using CPU-only implementation");
+  use_cuda_ = false;
+  this->set_parameter(rclcpp::Parameter("use_cuda", false));
 #endif
 
   // run setup after constructor has finished to enable shared_from_this()
@@ -336,6 +341,7 @@ rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(co
   // applying any changes.
   // Build the prospective state: current values overridden by incoming changes.
   bool any_range_param = false;
+  bool prospective_use_cuda = use_cuda_;
   int64_t prospective_fixed_points_per_input_cloud = fixed_points_per_input_cloud_;
   double prospective_x_min = range_limits_x_min_;
   double prospective_x_max = range_limits_x_max_;
@@ -348,6 +354,8 @@ rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(co
     const auto& name = param.get_name();
     if (name == "fixed_points_per_input_cloud") {
       prospective_fixed_points_per_input_cloud = param.as_int();
+    } else if (name == "use_cuda") {
+      prospective_use_cuda = param.as_bool();
     } else if (name == "range_limits.x_min") {
       prospective_x_min = param.as_double();
       any_range_param = true;
@@ -379,6 +387,26 @@ rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(co
     return result;
   }
 
+  if (prospective_use_cuda) {
+#ifdef ENABLE_CUDA
+    if (!cuda_context_) {
+      rcl_interfaces::msg::SetParametersResult result;
+      result.successful = false;
+      result.reason =
+          "CUDA backend is unavailable because CUDA context "
+          "initialization failed";
+      RCLCPP_ERROR(this->get_logger(), "Rejecting parameter update: %s", result.reason.c_str());
+      return result;
+    }
+#else
+    rcl_interfaces::msg::SetParametersResult result;
+    result.successful = false;
+    result.reason = "CUDA backend is unavailable because CUDA support was not compiled";
+    RCLCPP_ERROR(this->get_logger(), "Rejecting parameter update: %s", result.reason.c_str());
+    return result;
+#endif
+  }
+
   if (any_range_param) {
     rcl_interfaces::msg::SetParametersResult result;
     std::string reason;
@@ -403,6 +431,7 @@ rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(co
   }
 
   // All validations passed — apply changes.
+  const bool previous_use_cuda = use_cuda_;
   for (const auto& param : parameters) {
     for (auto& auto_reconfigurable_param : auto_reconfigurable_params_) {
       if (param.get_name() == std::get<0>(auto_reconfigurable_param)) {
@@ -412,6 +441,9 @@ rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(co
         break;
       }
     }
+  }
+  if (use_cuda_ != previous_use_cuda) {
+    RCLCPP_INFO(this->get_logger(), "Fusion backend switched to %s", use_cuda_ ? "CUDA" : "CPU");
   }
 
   rcl_interfaces::msg::SetParametersResult result;
