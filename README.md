@@ -1,10 +1,18 @@
 # point_cloud_fusion
 
 <p align="center">
+  <a href="https://github.com/openads-project"><img src="https://img.shields.io/badge/OpenADS-f5ff01"/></a>
   <a href="https://www.ros.org"><img src="https://img.shields.io/badge/ROS 2-jazzy-22314e"/></a>
+  <a href="https://github.com/openads-project/point_cloud_fusion/releases/latest"><img src="https://img.shields.io/github/v/release/openads-project/point_cloud_fusion"/></a>
+  <a href="https://github.com/openads-project/point_cloud_fusion/blob/main/LICENSE"><img src="https://img.shields.io/github/license/openads-project/point_cloud_fusion"/></a>
+  <br>
+  <a href="https://github.com/openads-project/point_cloud_fusion/actions/workflows/docker-ros.yml"><img src="https://github.com/openads-project/point_cloud_fusion/actions/workflows/docker-ros.yml/badge.svg"/></a>
+  <a href="https://github.com/openads-project/point_cloud_fusion/actions/workflows/compose-oci.yml"><img src="https://github.com/openads-project/point_cloud_fusion/actions/workflows/compose-oci.yml/badge.svg"/></a>
+  <a href="https://openads-project.github.io/point_cloud_fusion"><img src="https://github.com/openads-project/point_cloud_fusion/actions/workflows/docs.yml/badge.svg"/></a>
+  <a href="https://github.com/openads-project/point_cloud_fusion/actions/workflows/consistency.yml"><img src="https://github.com/openads-project/point_cloud_fusion/actions/workflows/consistency.yml/badge.svg"/></a>
 </p>
 
-This repository provides a ROS 2 point-cloud fusion node. The node subscribes to multiple `sensor_msgs/msg/PointCloud2` streams, transforms them into a common target frame, and publishes one fused point cloud through `point_cloud_transport`.
+This repository provides a ROS 2 point cloud fusion node. The node subscribes to multiple `sensor_msgs/msg/PointCloud2` streams, transforms them into a common target frame, and publishes one fused point cloud through `point_cloud_transport`.
 
 The package supports CPU processing and optional CUDA accelerated fusion.
 
@@ -23,7 +31,7 @@ The package supports CPU processing and optional CUDA accelerated fusion.
   </video>
 
 1. Launch the [`demo/docker-compose.yml`](demo/docker-compose.yml) setup. This
-   starts PCD playback, point-cloud fusion, RViz, and the runtime parameter GUI:
+   starts point cloud playback, point cloud fusion, RViz, and the runtime parameter GUI:
 
     ```bash
     cd demo
@@ -31,8 +39,7 @@ The package supports CPU processing and optional CUDA accelerated fusion.
     docker compose up
     ```
 
-3. Inspect `/demo/points/fused` in RViz and adjust runtime parameters in
-   `rqt_reconfigure`.
+3. The `ros-parameter-gui` service starts `rqt` with the `rqt_reconfigure` plugin. You may use it to inspect and adjust the parameters of the `point_cloud_fusion` node while the demo is active.
 
 4. Stop the demo with `Ctrl+C`, remove its containers, and revoke GUI access:
 
