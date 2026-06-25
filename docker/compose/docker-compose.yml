@@ -6,7 +6,7 @@ services:
       # --- name ------
       NAMESPACE: /
       NAME: point_cloud_fusion
-      # --- inputs ----
+      # --- outputs ---
       POINT_CLOUD_TOPIC: ~/point_cloud
       # --- other -----
       LOG_LEVEL: ${LOG_LEVEL:-info}
