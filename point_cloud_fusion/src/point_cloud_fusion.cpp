@@ -1379,21 +1379,13 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     copy_plan.push_back(plan);
   }
 
-  // Calculate max points for batch reset
-  // For strided sampling, slots must hold the FULL input cloud (we sample from
-  // all points) But output capacity only needs space for the downsampled count
-  size_t total_output_points = 0;
+  // Calculate max points for batch reset. For strided sampling, slots must hold
+  // the full input cloud because the kernel samples across the original range.
   size_t max_single_cloud_points = 0;  // Max points in any single input cloud (for slot sizing)
   for (const auto& msg : msgs) {
     if (msg) {
       size_t cloud_size = msg->width * msg->height;
       max_single_cloud_points = std::max(max_single_cloud_points, cloud_size);
-
-      // Output count is limited by fixed_points_per_input_cloud_ if set
-      size_t output_from_cloud = (fixed_points_per_input_cloud_ > 0)
-                                     ? std::min(cloud_size, static_cast<size_t>(fixed_points_per_input_cloud_))
-                                     : cloud_size;
-      total_output_points += output_from_cloud;
     }
   }
 
@@ -1410,9 +1402,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   const size_t num_inputs = msgs.size();
   size_t total_input_capacity = slot_size * num_inputs;
 
-  // Reset batch with fixed slots
-  // Note: total_input_capacity is for input buffers, but output may be smaller
-  // due to downsampling
+  // Reset batch with fixed slots.
   if (!cuda_context_->resetBatch(total_input_capacity, slot_size, point_step, fused_point_step, x_offset, y_offset, z_offset,
                                  fused_x_offset, fused_y_offset, fused_z_offset, copy_plan,
                                  static_cast<float>(range_limits_x_min_), static_cast<float>(range_limits_x_max_),

@@ -12,18 +12,6 @@
 namespace point_cloud_fusion {
 namespace cuda {
 
-struct BatchCloudInfo {
-  const uint8_t* input_data;
-  size_t num_points;
-  size_t point_step;
-  int x_offset;
-  int y_offset;
-  int z_offset;
-  const float* rotation_matrix;  // 9 floats
-  const float* translation;      // 3 floats
-  bool apply_transform;
-};
-
 struct CudaFieldCopy {
   int src_offset;
   int dst_offset;
@@ -43,7 +31,7 @@ struct CloudMetadata {
 
 /**
  * @brief CUDA context for point cloud transformation operations
- * 
+ *
  * Manages GPU memory and provides methods for transforming point clouds on GPU.
  * Memory is reused across multiple calls for efficiency.
  */
@@ -59,7 +47,8 @@ class CudaTransformContext {
   /**
    * @brief Prepare for a new batch of point clouds
    *
-   * @param total_max_points Maximum possible number of points in the batch (sum of all clouds)
+   * @param total_max_points Maximum possible number of points in the batch (sum
+   * of all clouds)
    * @param max_single_cloud_points Maximum number of points in any single cloud
    * @param input_point_step Size of each input point in bytes
    * @param output_point_step Size of each output point in bytes
@@ -100,7 +89,8 @@ class CudaTransformContext {
    * @param translation_host Translation vector (3 floats)
    * @param apply_transform Whether to apply transformation
    * @param slot_index which fixed-size slot to write into (0..num_slots-1)
-   * @param desired_points Desired number of points to sample (0 = all points, uses strided sampling)
+   * @param desired_points Desired number of points to sample (0 = all points,
+   * uses strided sampling)
    * @return true on success, false on error
    */
   bool addCloud(const uint8_t* input_data,
@@ -128,10 +118,9 @@ class CudaTransformContext {
   // Device memory
   uint8_t* d_input_points_;
   uint8_t* d_accumulated_buffer_;
-  unsigned int* d_global_count_;      // Atomic counter for total output
-  unsigned int* d_per_cloud_counts_;  // Atomic counter per cloud for limiting
-  void* d_cloud_metadata_;            // Device buffer for CloudMetadata
-  void* d_copy_plan_;                 // Device buffer for CudaFieldCopy
+  unsigned int* d_global_count_;  // Atomic counter for total output
+  void* d_cloud_metadata_;        // Device buffer for CloudMetadata
+  void* d_copy_plan_;             // Device buffer for CudaFieldCopy
 
   // Host pinned memory
   unsigned int* h_global_count_pinned_;
@@ -144,7 +133,6 @@ class CudaTransformContext {
   size_t output_capacity_;
   size_t current_input_point_step_;
   size_t current_output_point_step_;
-  size_t current_output_offset_;
   size_t slot_size_points_;   // fixed slot size in points (padding per cloud)
   size_t num_slots_;          // number of slots (usually number of input clouds)
   size_t metadata_capacity_;  // number of slots we can store metadata for
