@@ -27,7 +27,7 @@ The package supports CPU processing and optional CUDA accelerated fusion.
 
 ## 🚀 Quick Start
 
-  <video src="https://github.com/user-attachments/assets/e19c19f9-0e47-4ca5-a893-c3d78b458296" width="720" style="max-width: 100%;">
+  <video src="https://github.com/user-attachments/assets/81574b54-916a-4c59-9c35-9b27da59523d" width="720" style="max-width: 100%;">
   </video>
 
 1. Launch the [`demo/docker-compose.yml`](demo/docker-compose.yml) setup. This
