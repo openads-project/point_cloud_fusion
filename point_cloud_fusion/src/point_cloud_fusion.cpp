@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <iterator>
 #include <limits>
 #include <numeric>
 #include <sstream>
@@ -66,6 +67,43 @@ inline std::size_t pointFieldDatatypeSize(uint8_t datatype) {
 inline bool pointWithinRange(
     float x, float y, float z, float x_min, float x_max, float y_min, float y_max, float z_min, float z_max) {
   return x >= x_min && x <= x_max && y >= y_min && y <= y_max && z >= z_min && z <= z_max;
+}
+
+/**
+ * @brief Advance a byte pointer by an offset.
+ *
+ * @tparam Byte Byte element type, optionally const-qualified.
+ * @param data Base byte pointer.
+ * @param offset Number of bytes to advance.
+ * @return Pointer at the requested byte offset.
+ */
+template <typename Byte>
+inline Byte* byteOffset(Byte* data, std::size_t offset) {
+  return std::next(data, static_cast<std::ptrdiff_t>(offset));
+}
+
+/**
+ * @brief Load a potentially unaligned float from a byte buffer.
+ *
+ * @param data Base byte pointer.
+ * @param offset Byte offset of the float.
+ * @return Loaded float value.
+ */
+inline float loadFloat(const uint8_t* data, std::size_t offset) {
+  float value = 0.0F;
+  std::memcpy(&value, byteOffset(data, offset), sizeof(value));
+  return value;
+}
+
+/**
+ * @brief Store a float in a potentially unaligned byte buffer.
+ *
+ * @param data Base byte pointer.
+ * @param offset Byte offset of the float.
+ * @param value Float value to store.
+ */
+inline void storeFloat(uint8_t* data, std::size_t offset, float value) {
+  std::memcpy(byteOffset(data, offset), &value, sizeof(value));
 }
 
 }  // namespace
@@ -1060,30 +1098,28 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
         std::memcpy(dest_ptr, point_ptr, point_step);
       } else {
         for (const auto& plan : copy_plan) {
-          std::memcpy(dest_ptr + plan.destination.offset, point_ptr + plan.source->offset, plan.byte_length);
+          std::memcpy(byteOffset(dest_ptr, plan.destination.offset), byteOffset(point_ptr, plan.source->offset),
+                      plan.byte_length);
         }
       }
 
       if (overwrite_xyz) {
-        auto* dest_x = reinterpret_cast<float*>(dest_ptr + *fused_x_offset);
-        auto* dest_y = reinterpret_cast<float*>(dest_ptr + *fused_y_offset);
-        auto* dest_z = reinterpret_cast<float*>(dest_ptr + *fused_z_offset);
-        *dest_x = x;
-        *dest_y = y;
-        *dest_z = z;
+        storeFloat(dest_ptr, *fused_x_offset, x);
+        storeFloat(dest_ptr, *fused_y_offset, y);
+        storeFloat(dest_ptr, *fused_z_offset, z);
       }
 
-      dest_ptr += fused_point_step;
+      dest_ptr = byteOffset(dest_ptr, fused_point_step);
       ++valid_point_count;
     };
 
     if (fixed_points_per_input_cloud_ <= 0 || static_cast<size_t>(fixed_points_per_input_cloud_) >= total_points) {
       // Fast path: when no downsampling is requested.
       for (size_t idx = 0; idx < total_points; ++idx) {
-        const auto* point_ptr = src_data + idx * point_step;
-        const float x = *reinterpret_cast<const float*>(point_ptr + *x_offset);
-        const float y = *reinterpret_cast<const float*>(point_ptr + *y_offset);
-        const float z = *reinterpret_cast<const float*>(point_ptr + *z_offset);
+        const auto* point_ptr = byteOffset(src_data, idx * point_step);
+        const float x = loadFloat(point_ptr, *x_offset);
+        const float y = loadFloat(point_ptr, *y_offset);
+        const float z = loadFloat(point_ptr, *z_offset);
 
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
           continue;
@@ -1118,12 +1154,12 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     const size_t num_samples = desired_points;
 
     for (size_t i = 0; i < num_samples; ++i) {
-      const size_t idx = std::min(static_cast<size_t>(i * stride), total_points - 1);
+      const size_t idx = std::min(static_cast<size_t>(static_cast<double>(i) * stride), total_points - 1);
 
-      const auto* point_ptr = src_data + idx * point_step;
-      const float x = *reinterpret_cast<const float*>(point_ptr + *x_offset);
-      const float y = *reinterpret_cast<const float*>(point_ptr + *y_offset);
-      const float z = *reinterpret_cast<const float*>(point_ptr + *z_offset);
+      const auto* point_ptr = byteOffset(src_data, idx * point_step);
+      const float x = loadFloat(point_ptr, *x_offset);
+      const float y = loadFloat(point_ptr, *y_offset);
+      const float z = loadFloat(point_ptr, *z_offset);
 
       if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
         continue;
