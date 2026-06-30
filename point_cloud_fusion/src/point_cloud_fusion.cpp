@@ -847,12 +847,13 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   int y_offset = -1;
   int z_offset = -1;
   for (const auto& field : input0_msg->fields) {
-    if (field.name == "x")
+    if (field.name == "x") {
       x_offset = field.offset;
-    else if (field.name == "y")
+    } else if (field.name == "y") {
       y_offset = field.offset;
-    else if (field.name == "z")
+    } else if (field.name == "z") {
       z_offset = field.offset;
+    }
   }
 
   if (x_offset < 0 || y_offset < 0 || z_offset < 0) {
@@ -917,12 +918,13 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       plan.byte_length = datatype_size * static_cast<std::size_t>(iter->count);
       fused_point_step += plan.byte_length;
 
-      if (requested_name == "x")
+      if (requested_name == "x") {
         fused_x_offset = plan.destination.offset;
-      else if (requested_name == "y")
+      } else if (requested_name == "y") {
         fused_y_offset = plan.destination.offset;
-      else if (requested_name == "z")
+      } else if (requested_name == "z") {
         fused_z_offset = plan.destination.offset;
+      }
 
       copy_plan.push_back(plan);
       fused_fields.push_back(plan.destination);
