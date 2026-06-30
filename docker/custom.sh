@@ -24,9 +24,6 @@ if [ "$ARCH" = "amd64" ]; then
         cuda-cudart-12-8 \
         cuda-driver-dev-12-8
 
-    # Clean up apt cache to reduce image size
-    rm -rf /var/lib/apt/lists/*
-
     CUDA_ROOT="/usr/local/cuda-12.8"
     CUDA_LIB_DIR="${CUDA_ROOT}/targets/x86_64-linux/lib"
     if [ ! -d "$CUDA_LIB_DIR" ]; then
