@@ -93,7 +93,7 @@ colcon test-result --verbose
 
 ## 📝 Documentation
 
-Package and node interfaces are documented in the respective package READMEs listed below. Implementation details are found in the [Source Code Documentation](https://fb-fi.pages.ika.rwth-aachen.de/its-modules/perception/point_cloud_fusion).
+Package and node interfaces are documented in the respective package READMEs listed below. Implementation details are found in the [Source Code Documentation](https://openads-project.github.io/point_cloud_fusion).
 
 | Package | Description |
 | --- | --- |
