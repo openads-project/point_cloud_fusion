@@ -56,7 +56,7 @@ The package supports CPU processing and optional CUDA accelerated fusion.
 
 1. Clone the repository.
     ```bash
-    git clone https://gitlab.ika.rwth-aachen.de/fb-fi/its-modules/perception/point_cloud_fusion.git
+    git clone https://github.com/openads-project/point_cloud_fusion.git
     ```
 1. Initialize the [`.openads-dev-environment`](https://github.com/openads-project/openads-dev-environment) submodule containing development environment configuration.
     ```bash

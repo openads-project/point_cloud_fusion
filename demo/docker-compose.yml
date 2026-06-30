@@ -24,7 +24,7 @@ services:
       - ./pcd-playback/pcd_publisher.py:/opt/demo/pcd_publisher.py:ro
 
   point-cloud-fusion:
-    image: gitlab.ika.rwth-aachen.de:5050/fb-fi/its-modules/perception/point_cloud_fusion:latest_openads_ci-amd64
+    image: ghcr.io/openads-project/point_cloud_fusion:latest
     pull_policy: always
     depends_on: [pcd-playback]
     deploy:
@@ -50,7 +50,7 @@ services:
           --log-level demo.point_cloud_fusion:=${FUSION_LOG_LEVEL:-debug}
 
   ros-parameter-gui:
-    image: gitlab.ika.rwth-aachen.de:5050/fb-fi/its-modules/monitoring/ros-monitoring:v1.0.0
+    image: ghcr.io/openads-project/monitoring:v1.0.0
     depends_on: [point-cloud-fusion]
     environment:
       <<: *ros_common_env
@@ -64,7 +64,7 @@ services:
       "
 
   rviz:
-    image: gitlab.ika.rwth-aachen.de:5050/fb-fi/its-modules/monitoring/ros-monitoring:v1.0.0
+    image: ghcr.io/openads-project/monitoring:v1.0.0
     depends_on: [point-cloud-fusion]
     deploy:
       <<: *gpu_reservation
