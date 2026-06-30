@@ -843,9 +843,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     return nullptr;
   }
 
-  int x_offset = -1;
-  int y_offset = -1;
-  int z_offset = -1;
+  std::optional<uint32_t> x_offset;
+  std::optional<uint32_t> y_offset;
+  std::optional<uint32_t> z_offset;
   for (const auto& field : input0_msg->fields) {
     if (field.name == "x") {
       x_offset = field.offset;
@@ -856,7 +856,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     }
   }
 
-  if (x_offset < 0 || y_offset < 0 || z_offset < 0) {
+  if (!x_offset || !y_offset || !z_offset) {
     RCLCPP_WARN(this->get_logger(), "Point cloud lacks x/y/z fields; skipping fusion for this batch.");
     valid_point_count = 0;
     return nullptr;
@@ -878,11 +878,14 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   fused_fields.reserve(input0_fields.size());
 
   std::size_t fused_point_step = point_step;
-  int fused_x_offset = x_offset;
-  int fused_y_offset = y_offset;
-  int fused_z_offset = z_offset;
+  std::optional<uint32_t> fused_x_offset = x_offset;
+  std::optional<uint32_t> fused_y_offset = y_offset;
+  std::optional<uint32_t> fused_z_offset = z_offset;
 
   if (!use_all_fields) {
+    fused_x_offset.reset();
+    fused_y_offset.reset();
+    fused_z_offset.reset();
     bool selection_valid = true;
     fused_point_step = 0;
     fused_fields.clear();
@@ -930,7 +933,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       fused_fields.push_back(plan.destination);
     }
 
-    if (!selection_valid || fused_x_offset < 0 || fused_y_offset < 0 || fused_z_offset < 0) {
+    if (!selection_valid || !fused_x_offset || !fused_y_offset || !fused_z_offset) {
       if (selection_valid) {
         RCLCPP_ERROR(this->get_logger(),
                      "Output field selection must include x, y, and z; "
@@ -1062,9 +1065,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       }
 
       if (overwrite_xyz) {
-        auto* dest_x = reinterpret_cast<float*>(dest_ptr + fused_x_offset);
-        auto* dest_y = reinterpret_cast<float*>(dest_ptr + fused_y_offset);
-        auto* dest_z = reinterpret_cast<float*>(dest_ptr + fused_z_offset);
+        auto* dest_x = reinterpret_cast<float*>(dest_ptr + *fused_x_offset);
+        auto* dest_y = reinterpret_cast<float*>(dest_ptr + *fused_y_offset);
+        auto* dest_z = reinterpret_cast<float*>(dest_ptr + *fused_z_offset);
         *dest_x = x;
         *dest_y = y;
         *dest_z = z;
@@ -1078,9 +1081,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       // Fast path: when no downsampling is requested.
       for (size_t idx = 0; idx < total_points; ++idx) {
         const auto* point_ptr = src_data + idx * point_step;
-        const float x = *reinterpret_cast<const float*>(point_ptr + x_offset);
-        const float y = *reinterpret_cast<const float*>(point_ptr + y_offset);
-        const float z = *reinterpret_cast<const float*>(point_ptr + z_offset);
+        const float x = *reinterpret_cast<const float*>(point_ptr + *x_offset);
+        const float y = *reinterpret_cast<const float*>(point_ptr + *y_offset);
+        const float z = *reinterpret_cast<const float*>(point_ptr + *z_offset);
 
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
           continue;
@@ -1118,9 +1121,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       const size_t idx = std::min(static_cast<size_t>(i * stride), total_points - 1);
 
       const auto* point_ptr = src_data + idx * point_step;
-      const float x = *reinterpret_cast<const float*>(point_ptr + x_offset);
-      const float y = *reinterpret_cast<const float*>(point_ptr + y_offset);
-      const float z = *reinterpret_cast<const float*>(point_ptr + z_offset);
+      const float x = *reinterpret_cast<const float*>(point_ptr + *x_offset);
+      const float y = *reinterpret_cast<const float*>(point_ptr + *y_offset);
+      const float z = *reinterpret_cast<const float*>(point_ptr + *z_offset);
 
       if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
         continue;
