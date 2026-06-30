@@ -8,6 +8,9 @@ ARCH=$(dpkg --print-architecture)
 CMAKE_CACHE_DIR="/opt/ros-cmake-cache"
 mkdir -p "$CMAKE_CACHE_DIR"
 
+apt-get update
+apt-get install -y --no-install-recommends libomp-18-dev
+
 if [ "$ARCH" = "amd64" ]; then
     echo "Installing CUDA 12.8 build/runtime packages for amd64..."
 
@@ -16,8 +19,7 @@ if [ "$ARCH" = "amd64" ]; then
     dpkg -i cuda-keyring_1.1-1_all.deb
     rm cuda-keyring_1.1-1_all.deb
 
-    # Update apt cache and install only the CUDA packages required by this repo:
-    apt-get update
+    # Install only the CUDA packages required by this repo:
     apt-get install -y --no-install-recommends \
         cuda-nvcc-12-8 \
         cuda-cudart-dev-12-8 \
