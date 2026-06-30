@@ -549,7 +549,7 @@ using SyncType = message_filters::Synchronizer<SyncPolicy<N>>;
 template <std::size_t N, std::size_t... Is>
 void connectInputsImpl(SyncType<N>& sync,
                        const std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>>& subs,
-                       std::index_sequence<Is...>) {
+                       std::index_sequence<Is...> /*unused*/) {
   // Fan the subscriber filters into the synchronizer inputs.
   sync.connectInput(*subs[Is]...);
 }
