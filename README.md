@@ -12,6 +12,8 @@
   <a href="https://github.com/openads-project/point_cloud_fusion/actions/workflows/consistency.yml"><img src="https://github.com/openads-project/point_cloud_fusion/actions/workflows/consistency.yml/badge.svg"/></a>
 </p>
 
+**ROS 2 Point Cloud Fusion of Multiple Point Clouds into a Single Point Cloud**
+
 This repository provides a ROS 2 point cloud fusion node. The node subscribes to multiple `sensor_msgs/msg/PointCloud2` streams, transforms them into a common target frame, and publishes one fused point cloud through `point_cloud_transport`.
 
 The package supports CPU processing and optional CUDA accelerated fusion.
