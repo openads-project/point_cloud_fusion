@@ -23,7 +23,7 @@ docker-ros:
       --preserve-path /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so.12
       --preserve-path /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so.12.8.90
     ENABLE_INDUSTRIAL_CI: 'false'
-    TARGET_CMAKE_ARGS: '-DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DENABLE_CUDA=OFF'
+    TARGET_CMAKE_ARGS: '-DCMAKE_EXPORT_COMPILE_COMMANDS=1'
 
 compose-oci:
   stage: compose-oci
