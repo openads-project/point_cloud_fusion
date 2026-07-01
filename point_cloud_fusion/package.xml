@@ -3,7 +3,7 @@
 <package format="3">
 
   <name>point_cloud_fusion</name>
-  <version>1.3.0</version>
+  <version>1.4.0</version>
   <description>Fuses multiple point clouds into a single point cloud with common target frame.</description>
 
   <maintainer email="bastian.lampe@rwth-aachen.de">Bastian Lampe</maintainer>
