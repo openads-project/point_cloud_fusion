@@ -117,15 +117,11 @@ class PointCloudFusion : public rclcpp::Node {
     /**
      * @brief Construct timing metadata with zero-initialized stamps and deltas.
      */
-    FusionTiming()
-        : earliest_stamp(rclcpp::Time()),
-          latest_stamp(rclcpp::Time()),
-          input0_stamp(rclcpp::Time()),
-          max_dt_from_input0_sec(0.0) {}
+    FusionTiming() = default;
     rclcpp::Time earliest_stamp;
     rclcpp::Time latest_stamp;
     rclcpp::Time input0_stamp;
-    double max_dt_from_input0_sec;
+    double max_dt_from_input0_sec{0.0};
   };
 
   /**
@@ -177,7 +173,6 @@ class PointCloudFusion : public rclcpp::Node {
                          std::chrono::steady_clock::time_point processing_end,
                          const char* event_name);
 
- private:
   enum class OutputStampMode { Latest, Earliest, Mean, Input0 };
 
   /**
@@ -235,9 +230,9 @@ class PointCloudFusion : public rclcpp::Node {
   OutputStampMode output_stamp_mode_ = OutputStampMode::Earliest;
   std::string output_stamp_mode_param_ = "earliest";
   std::string target_frame_ = "base_link";
-  std::vector<std::string> output_fields_ = {};
+  std::vector<std::string> output_fields_;
   std::vector<std::string> input_topics_;
-  std::vector<std::string> input_transport_hints_ = {};
+  std::vector<std::string> input_transport_hints_;
 
   /**
    * @brief Auto-reconfigurable parameters for dynamic reconfiguration

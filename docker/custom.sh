@@ -16,16 +16,13 @@ if [ "$ARCH" = "amd64" ]; then
     dpkg -i cuda-keyring_1.1-1_all.deb
     rm cuda-keyring_1.1-1_all.deb
 
-    # Update apt cache and install only the CUDA packages required by this repo:
+    # Refresh package lists after adding the NVIDIA CUDA repository.
     apt-get update
     apt-get install -y --no-install-recommends \
         cuda-nvcc-12-8 \
         cuda-cudart-dev-12-8 \
         cuda-cudart-12-8 \
         cuda-driver-dev-12-8
-
-    # Clean up apt cache to reduce image size
-    rm -rf /var/lib/apt/lists/*
 
     CUDA_ROOT="/usr/local/cuda-12.8"
     CUDA_LIB_DIR="${CUDA_ROOT}/targets/x86_64-linux/lib"
@@ -52,8 +49,20 @@ if [ "$ARCH" = "amd64" ]; then
 else
     echo "Skipping CUDA installation on $ARCH (not supported)"
     echo "Building CPU-only version"
-    
+
     # Create marker file to indicate CUDA is NOT available
     rm -f "$CMAKE_CACHE_DIR/cuda-available"
     touch "$CMAKE_CACHE_DIR/cuda-unavailable"
 fi
+
+# TODO: remove once [https://github.com/ros2/ros2_tracing/issues/211] is solved in released version
+# overwrite released ros2_tracing packages with fork to support
+# 'message-link instrumentation' and 'dual-session mode' in jazzy
+cd /docker-ros/ws
+git clone --branch jazzy-ika https://github.com/RaphvK/ros2_tracing.git src/ros2_tracing
+rosdep update && rosdep install -y -i --from-paths src/ros2_tracing/tracetools src/ros2_tracing/tracetools_launch
+set +u
+source "/opt/ros/${ROS_DISTRO}/setup.bash"
+set -u
+colcon build --packages-up-to tracetools tracetools_launch --allow-overriding tracetools --allow-overriding tracetools_launch
+rm -r src/ros2_tracing log/ build/ 

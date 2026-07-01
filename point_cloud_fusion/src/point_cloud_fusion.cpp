@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <iterator>
 #include <limits>
 #include <numeric>
 #include <sstream>
@@ -66,6 +67,43 @@ inline std::size_t pointFieldDatatypeSize(uint8_t datatype) {
 inline bool pointWithinRange(
     float x, float y, float z, float x_min, float x_max, float y_min, float y_max, float z_min, float z_max) {
   return x >= x_min && x <= x_max && y >= y_min && y <= y_max && z >= z_min && z <= z_max;
+}
+
+/**
+ * @brief Advance a byte pointer by an offset.
+ *
+ * @tparam Byte Byte element type, optionally const-qualified.
+ * @param data Base byte pointer.
+ * @param offset Number of bytes to advance.
+ * @return Pointer at the requested byte offset.
+ */
+template <typename Byte>
+inline Byte* byteOffset(Byte* data, std::size_t offset) {
+  return std::next(data, static_cast<std::ptrdiff_t>(offset));
+}
+
+/**
+ * @brief Load a potentially unaligned float from a byte buffer.
+ *
+ * @param data Base byte pointer.
+ * @param offset Byte offset of the float.
+ * @return Loaded float value.
+ */
+inline float loadFloat(const uint8_t* data, std::size_t offset) {
+  float value = 0.0F;
+  std::memcpy(&value, byteOffset(data, offset), sizeof(value));
+  return value;
+}
+
+/**
+ * @brief Store a float in a potentially unaligned byte buffer.
+ *
+ * @param data Base byte pointer.
+ * @param offset Byte offset of the float.
+ * @param value Float value to store.
+ */
+inline void storeFloat(uint8_t* data, std::size_t offset, float value) {
+  std::memcpy(byteOffset(data, offset), &value, sizeof(value));
 }
 
 }  // namespace
@@ -549,7 +587,7 @@ using SyncType = message_filters::Synchronizer<SyncPolicy<N>>;
 template <std::size_t N, std::size_t... Is>
 void connectInputsImpl(SyncType<N>& sync,
                        const std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>>& subs,
-                       std::index_sequence<Is...>) {
+                       std::index_sequence<Is...> /*unused*/) {
   // Fan the subscriber filters into the synchronizer inputs.
   sync.connectInput(*subs[Is]...);
 }
@@ -843,19 +881,20 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     return nullptr;
   }
 
-  int x_offset = -1;
-  int y_offset = -1;
-  int z_offset = -1;
+  std::optional<uint32_t> x_offset;
+  std::optional<uint32_t> y_offset;
+  std::optional<uint32_t> z_offset;
   for (const auto& field : input0_msg->fields) {
-    if (field.name == "x")
+    if (field.name == "x") {
       x_offset = field.offset;
-    else if (field.name == "y")
+    } else if (field.name == "y") {
       y_offset = field.offset;
-    else if (field.name == "z")
+    } else if (field.name == "z") {
       z_offset = field.offset;
+    }
   }
 
-  if (x_offset < 0 || y_offset < 0 || z_offset < 0) {
+  if (!x_offset || !y_offset || !z_offset) {
     RCLCPP_WARN(this->get_logger(), "Point cloud lacks x/y/z fields; skipping fusion for this batch.");
     valid_point_count = 0;
     return nullptr;
@@ -877,11 +916,14 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   fused_fields.reserve(input0_fields.size());
 
   std::size_t fused_point_step = point_step;
-  int fused_x_offset = x_offset;
-  int fused_y_offset = y_offset;
-  int fused_z_offset = z_offset;
+  std::optional<uint32_t> fused_x_offset = x_offset;
+  std::optional<uint32_t> fused_y_offset = y_offset;
+  std::optional<uint32_t> fused_z_offset = z_offset;
 
   if (!use_all_fields) {
+    fused_x_offset.reset();
+    fused_y_offset.reset();
+    fused_z_offset.reset();
     bool selection_valid = true;
     fused_point_step = 0;
     fused_fields.clear();
@@ -917,18 +959,19 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       plan.byte_length = datatype_size * static_cast<std::size_t>(iter->count);
       fused_point_step += plan.byte_length;
 
-      if (requested_name == "x")
+      if (requested_name == "x") {
         fused_x_offset = plan.destination.offset;
-      else if (requested_name == "y")
+      } else if (requested_name == "y") {
         fused_y_offset = plan.destination.offset;
-      else if (requested_name == "z")
+      } else if (requested_name == "z") {
         fused_z_offset = plan.destination.offset;
+      }
 
       copy_plan.push_back(plan);
       fused_fields.push_back(plan.destination);
     }
 
-    if (!selection_valid || fused_x_offset < 0 || fused_y_offset < 0 || fused_z_offset < 0) {
+    if (!selection_valid || !fused_x_offset || !fused_y_offset || !fused_z_offset) {
       if (selection_valid) {
         RCLCPP_ERROR(this->get_logger(),
                      "Output field selection must include x, y, and z; "
@@ -1055,30 +1098,28 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
         std::memcpy(dest_ptr, point_ptr, point_step);
       } else {
         for (const auto& plan : copy_plan) {
-          std::memcpy(dest_ptr + plan.destination.offset, point_ptr + plan.source->offset, plan.byte_length);
+          std::memcpy(byteOffset(dest_ptr, plan.destination.offset), byteOffset(point_ptr, plan.source->offset),
+                      plan.byte_length);
         }
       }
 
       if (overwrite_xyz) {
-        auto* dest_x = reinterpret_cast<float*>(dest_ptr + fused_x_offset);
-        auto* dest_y = reinterpret_cast<float*>(dest_ptr + fused_y_offset);
-        auto* dest_z = reinterpret_cast<float*>(dest_ptr + fused_z_offset);
-        *dest_x = x;
-        *dest_y = y;
-        *dest_z = z;
+        storeFloat(dest_ptr, *fused_x_offset, x);
+        storeFloat(dest_ptr, *fused_y_offset, y);
+        storeFloat(dest_ptr, *fused_z_offset, z);
       }
 
-      dest_ptr += fused_point_step;
+      dest_ptr = byteOffset(dest_ptr, fused_point_step);
       ++valid_point_count;
     };
 
     if (fixed_points_per_input_cloud_ <= 0 || static_cast<size_t>(fixed_points_per_input_cloud_) >= total_points) {
       // Fast path: when no downsampling is requested.
       for (size_t idx = 0; idx < total_points; ++idx) {
-        const auto* point_ptr = src_data + idx * point_step;
-        const float x = *reinterpret_cast<const float*>(point_ptr + x_offset);
-        const float y = *reinterpret_cast<const float*>(point_ptr + y_offset);
-        const float z = *reinterpret_cast<const float*>(point_ptr + z_offset);
+        const auto* point_ptr = byteOffset(src_data, idx * point_step);
+        const float x = loadFloat(point_ptr, *x_offset);
+        const float y = loadFloat(point_ptr, *y_offset);
+        const float z = loadFloat(point_ptr, *z_offset);
 
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
           continue;
@@ -1113,12 +1154,12 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     const size_t num_samples = desired_points;
 
     for (size_t i = 0; i < num_samples; ++i) {
-      const size_t idx = std::min(static_cast<size_t>(i * stride), total_points - 1);
+      const size_t idx = std::min(static_cast<size_t>(static_cast<double>(i) * stride), total_points - 1);
 
-      const auto* point_ptr = src_data + idx * point_step;
-      const float x = *reinterpret_cast<const float*>(point_ptr + x_offset);
-      const float y = *reinterpret_cast<const float*>(point_ptr + y_offset);
-      const float z = *reinterpret_cast<const float*>(point_ptr + z_offset);
+      const auto* point_ptr = byteOffset(src_data, idx * point_step);
+      const float x = loadFloat(point_ptr, *x_offset);
+      const float y = loadFloat(point_ptr, *y_offset);
+      const float z = loadFloat(point_ptr, *z_offset);
 
       if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
         continue;
