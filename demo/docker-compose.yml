@@ -24,7 +24,7 @@ services:
       - ./pcd-playback/pcd_publisher.py:/opt/demo/pcd_publisher.py:ro
 
   point-cloud-fusion:
-    image: ghcr.io/openads-project/point_cloud_fusion:latest
+    image: ghcr.io/openads-project/point_cloud_fusion:latest-slim
     pull_policy: always
     depends_on: [pcd-playback]
     deploy:
