@@ -43,11 +43,10 @@ services:
       - |
         exec ros2 run point_cloud_fusion point_cloud_fusion --ros-args \
           --params-file /docker-ros/ws/install/point_cloud_fusion/share/point_cloud_fusion/config/params.yml \
-          -r __ns:=/demo \
           -r __node:=point_cloud_fusion \
-          -r /demo/point_cloud_fusion/point_cloud:=/demo/points/fused \
+          -r /point_cloud_fusion/point_cloud:=/demo/points/fused \
           --log-level info \
-          --log-level demo.point_cloud_fusion:=${FUSION_LOG_LEVEL:-debug}
+          --log-level point_cloud_fusion:=${FUSION_LOG_LEVEL:-debug}
 
   ros-parameter-gui:
     image: ghcr.io/openads-project/monitoring:v1.0.0
