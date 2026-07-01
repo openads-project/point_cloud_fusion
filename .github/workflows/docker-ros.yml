@@ -23,9 +23,9 @@ jobs:
           rmw-implementation: rmw_zenoh_cpp
           command: ros2 launch point_cloud_fusion point_cloud_fusion.launch.py
           enable-industrial-ci: true
+          cmake-args: -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DREQUIRE_CUDA=ON
         env:
           ENABLE_RECURSIVE_VCS_IMPORT: 'false'
-          CMAKE_ARGS: -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DREQUIRE_CUDA=ON
           TARGET_CMAKE_ARGS: -DCMAKE_EXPORT_COMPILE_COMMANDS=1
           ADDITIONAL_SLIM_BUILD_ARGS: >-
             --preserve-path /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so
