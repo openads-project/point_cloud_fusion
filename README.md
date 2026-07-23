@@ -1,7 +1,7 @@
 # point_cloud_fusion
 
 <p align="center">
-  <a href="https://github.com/openads-project"><img src="https://img.shields.io/badge/OpenADS-f5ff01"/></a>
+  <a href="https://openads-project.github.io"><img src="https://img.shields.io/badge/OpenADS-f5ff01"/></a>
   <a href="https://www.ros.org"><img src="https://img.shields.io/badge/ROS 2-jazzy-22314e"/></a>
   <a href="https://github.com/openads-project/point_cloud_fusion/releases/latest"><img src="https://img.shields.io/github/v/release/openads-project/point_cloud_fusion"/></a>
   <a href="https://github.com/openads-project/point_cloud_fusion/blob/main/LICENSE"><img src="https://img.shields.io/github/license/openads-project/point_cloud_fusion"/></a>
