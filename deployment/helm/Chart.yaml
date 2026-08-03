@@ -1,0 +1,9 @@
+apiVersion: v2
+name: point-cloud-fusion
+version: 1.4.0
+appVersion: 1.4.0
+description: ROS 2 Point Cloud Fusion of Multiple Point Clouds into a Single Point Cloud
+dependencies:
+  - repository: oci://ghcr.io/openads-project/openads-helm
+    name: openadservice
+    version: 1.0.0
