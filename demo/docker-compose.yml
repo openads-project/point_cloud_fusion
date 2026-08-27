@@ -11,6 +11,14 @@ x-gpu-reservation: &gpu_reservation
           count: all
           capabilities: [gpu]
 
+x-pcd-mount: &pcd_mount
+  type: image
+  source: ${PCD_IMAGE:-ghcr.io/openads-project/point_cloud_fusion/pcds:v1.0.0}
+  target: /data
+  read_only: true
+  image:
+    subpath: pcds
+
 services:
   pcd-playback:
     build:
@@ -20,7 +28,7 @@ services:
       PCD_DIR: /data
       PCD_PUBLISH_RATE_HZ: ${PCD_PUBLISH_RATE_HZ:-10.0}
     volumes:
-      - ./pcds:/data:ro
+      - *pcd_mount
       - ./pcd-playback/pcd_publisher.py:/opt/demo/pcd_publisher.py:ro
 
   point-cloud-fusion:
