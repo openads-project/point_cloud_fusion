@@ -44,6 +44,11 @@ flowchart LR
 | `output_stamp_mode` | `string` | `"earliest"` | Fused timestamp selection: earliest, latest, mean, or input0 |
 | `fixed_points_per_input_cloud` | `int` | `0` | Runtime-reconfigurable maximum valid point count per input cloud; 0 disables the limit |
 | `use_cuda` | `bool` | `true` | Runtime-reconfigurable backend selection; true uses CUDA and false uses CPU |
+| `motion_compensation.enable` | `bool` | `false` | Compensate inter-sensor capture skew and motion during each scan |
+| `motion_compensation.fixed_frame` | `string` | `"map"` | World-fixed TF frame used to compare sensor poses at different times |
+| `motion_compensation.time_field` | `string` | `"t"` | UINT32 point field containing an offset from the cloud header stamp |
+| `motion_compensation.time_scale_sec` | `float` | `1.0e-9` | Seconds represented by one unit of the per-point time field |
+| `motion_compensation.tf_timeout_sec` | `float` | `0.1` | Timeout for the first motion-compensation TF failure [s] |
 | `range_limits.enable` | `bool` | `false` | Enable XYZ range filtering after transformation into target_frame |
 | `range_limits.x_min` | `float` | `-1000.0` | Minimum x coordinate in target_frame to keep [m] |
 | `range_limits.x_max` | `float` | `1000.0` | Maximum x coordinate in target_frame to keep [m] |

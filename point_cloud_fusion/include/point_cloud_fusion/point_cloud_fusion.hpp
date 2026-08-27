@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <limits>
 #include <memory>
@@ -25,6 +26,8 @@
 #include <point_cloud_transport/subscriber_filter.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
+
+#include <point_cloud_fusion/motion_compensation.hpp>
 
 #ifdef ENABLE_CUDA
 #include <point_cloud_fusion/point_cloud_fusion_cuda.hpp>
@@ -134,6 +137,35 @@ class PointCloudFusion : public rclcpp::Node {
   bool collectTimingInfo(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs, FusionTiming& timing) const;
 
   /**
+   * @brief Select the timestamp used by the fused cloud and motion
+   * compensation.
+   */
+  rclcpp::Time outputStamp(const FusionTiming& timing) const;
+
+  /**
+   * @brief Build an interpolated motion transform for one input scan.
+   *
+   * Two TF samples are fetched per cloud. Point transforms between those
+   * samples are interpolated in the CPU loop or CUDA kernel.
+   */
+  bool prepareMotionTransform(const PointCloudMsg& msg,
+                              const rclcpp::Time& reference_stamp,
+                              int time_field_offset,
+                              double timeout_sec,
+                              MotionTransform& transform) const;
+
+  /**
+   * @brief Preflight motion transforms for an entire synchronized batch.
+   *
+   * Motion compensation is all-or-nothing within a batch. After a failure,
+   * later batches probe without waiting until every transform is available.
+   */
+  bool prepareBatchMotionTransforms(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
+                                    const rclcpp::Time& reference_stamp,
+                                    int time_field_offset,
+                                    std::vector<MotionTransform>& transforms) const;
+
+  /**
    * @brief Fuse a synchronized point-cloud batch using the CPU path.
    *
    * @param msgs Synchronized input point clouds.
@@ -227,6 +259,12 @@ class PointCloudFusion : public rclcpp::Node {
   double range_limits_z_min_ = -20.0;
   double range_limits_z_max_ = 20.0;
   bool use_cuda_ = true;
+  bool motion_compensation_enable_ = false;
+  std::string motion_compensation_fixed_frame_ = "map";
+  std::string motion_compensation_time_field_ = "t";
+  double motion_compensation_time_scale_sec_ = 1.0e-9;
+  double motion_compensation_tf_timeout_sec_ = 0.1;
+  mutable std::atomic_bool motion_tf_available_{true};
   OutputStampMode output_stamp_mode_ = OutputStampMode::Earliest;
   std::string output_stamp_mode_param_ = "earliest";
   std::string target_frame_ = "base_link";

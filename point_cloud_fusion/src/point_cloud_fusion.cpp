@@ -95,6 +95,12 @@ inline float loadFloat(const uint8_t* data, std::size_t offset) {
   return value;
 }
 
+inline uint32_t loadUint32(const uint8_t* data, std::size_t offset) {
+  uint32_t value = 0;
+  std::memcpy(&value, byteOffset(data, offset), sizeof(value));
+  return value;
+}
+
 /**
  * @brief Store a float in a potentially unaligned byte buffer.
  *
@@ -185,6 +191,46 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 false,                                           // read_only
                                 std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
                                 "Runtime changes apply between fusion batches.");  // additional_constraints
+  this->declareAndLoadParameter("motion_compensation.enable", motion_compensation_enable_,
+                                "Compensate inter-sensor capture skew and motion during each scan",
+                                true,                                            // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                false,                                           // read_only
+                                std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
+                                "Requires a connected TF trajectory through motion_compensation.fixed_frame; "
+                                "the per-point time field is optional.");
+  this->declareAndLoadParameter("motion_compensation.fixed_frame", motion_compensation_fixed_frame_,
+                                "World-fixed TF frame used to compare sensor poses at different times",
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true,                                            // read_only
+                                std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
+                                "Typically map or odom; must connect target_frame and every input frame.");
+  this->declareAndLoadParameter("motion_compensation.time_field", motion_compensation_time_field_,
+                                "UINT32 point field containing an offset from the cloud header stamp",
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true,                                            // read_only
+                                std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
+                                "If absent, capture-time compensation remains active but scan deskewing is skipped.");
+  this->declareAndLoadParameter("motion_compensation.time_scale_sec", motion_compensation_time_scale_sec_,
+                                "Seconds represented by one unit of the per-point time field",
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true,                                            // read_only
+                                1.0e-12,                                         // from_value
+                                1.0,                                             // to_value
+                                std::nullopt,                                    // step_value
+                                "Use 1e-9 for Ouster nanosecond offsets.");      // additional_constraints
+  this->declareAndLoadParameter("motion_compensation.tf_timeout_sec", motion_compensation_tf_timeout_sec_,
+                                "Timeout for the first motion-compensation TF failure [s]",
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true,                                            // read_only
+                                0.0,                                             // from_value
+                                1.0,                                             // to_value
+                                std::nullopt,                                    // step_value
+                                "The entire batch falls back to rigid transforms; recovery probes do not wait.");
   this->declareAndLoadParameter("range_limits.enable", range_limits_enable_,     // name
                                 "Enable XYZ range filtering after transformation into target_frame",
                                 true,                                            // add_to_auto_reconfigurable_params
@@ -870,6 +916,123 @@ bool PointCloudFusion::collectTimingInfo(const std::vector<PointCloudMsg::ConstS
   return true;
 }
 
+rclcpp::Time PointCloudFusion::outputStamp(const FusionTiming& timing) const {
+  switch (output_stamp_mode_) {
+    case OutputStampMode::Earliest:
+      return timing.earliest_stamp;
+    case OutputStampMode::Mean: {
+      const auto delta = timing.latest_stamp - timing.earliest_stamp;
+      return timing.earliest_stamp + rclcpp::Duration::from_nanoseconds(delta.nanoseconds() / 2);
+    }
+    case OutputStampMode::Input0:
+      return timing.input0_stamp;
+    case OutputStampMode::Latest:
+    default:
+      return timing.latest_stamp;
+  }
+}
+
+bool PointCloudFusion::prepareMotionTransform(const PointCloudMsg& msg,
+                                              const rclcpp::Time& reference_stamp,
+                                              int time_field_offset,
+                                              double timeout_sec,
+                                              MotionTransform& transform) const {
+  transform = MotionTransform{};
+
+  const std::size_t total_points = static_cast<std::size_t>(msg.width) * static_cast<std::size_t>(msg.height);
+  if (time_field_offset >= 0 && total_points > 0) {
+    const auto offset = static_cast<std::size_t>(time_field_offset);
+    if (offset + sizeof(uint32_t) <= msg.point_step && msg.data.size() >= total_points * msg.point_step) {
+      const auto* data = msg.data.data();
+      uint32_t max_time_offset = 0;
+      for (std::size_t idx = 0; idx < total_points; ++idx) {
+        max_time_offset = std::max(max_time_offset, loadUint32(byteOffset(data, idx * msg.point_step), offset));
+      }
+      transform.max_time_offset = max_time_offset;
+    }
+  }
+
+  const rclcpp::Time scan_start(msg.header.stamp);
+  const auto scan_duration =
+      rclcpp::Duration::from_seconds(static_cast<double>(transform.max_time_offset) * motion_compensation_time_scale_sec_);
+  const rclcpp::Time scan_end = scan_start + scan_duration;
+  const auto timeout = rclcpp::Duration::from_seconds(timeout_sec);
+
+  auto lookup_at = [&](const rclcpp::Time& source_stamp) {
+    return tf_buffer_->lookupTransform(target_frame_, reference_stamp, msg.header.frame_id, source_stamp,
+                                       motion_compensation_fixed_frame_, timeout);
+  };
+
+  geometry_msgs::msg::TransformStamped start_stamped;
+  geometry_msgs::msg::TransformStamped end_stamped;
+  try {
+    start_stamped = lookup_at(scan_start);
+    end_stamped = transform.max_time_offset > 0 ? lookup_at(scan_end) : start_stamped;
+  } catch (const tf2::TransformException& ex) {
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                         "Motion compensation unavailable for '%s' through "
+                         "fixed frame '%s': %s; "
+                         "falling back to rigid transforms for this batch",
+                         msg.header.frame_id.c_str(), motion_compensation_fixed_frame_.c_str(), ex.what());
+    return false;
+  }
+
+  auto copy_transform = [](const geometry_msgs::msg::Transform& source, std::array<float, 3>& translation,
+                           std::array<float, 4>& quaternion) {
+    translation[0] = static_cast<float>(source.translation.x);
+    translation[1] = static_cast<float>(source.translation.y);
+    translation[2] = static_cast<float>(source.translation.z);
+    quaternion[0] = static_cast<float>(source.rotation.x);
+    quaternion[1] = static_cast<float>(source.rotation.y);
+    quaternion[2] = static_cast<float>(source.rotation.z);
+    quaternion[3] = static_cast<float>(source.rotation.w);
+  };
+  copy_transform(start_stamped.transform, transform.start_translation, transform.start_quaternion);
+  copy_transform(end_stamped.transform, transform.end_translation, transform.end_quaternion);
+
+  const float quaternion_dot =
+      transform.start_quaternion[0] * transform.end_quaternion[0] + transform.start_quaternion[1] * transform.end_quaternion[1] +
+      transform.start_quaternion[2] * transform.end_quaternion[2] + transform.start_quaternion[3] * transform.end_quaternion[3];
+  if (quaternion_dot < 0.0F) {
+    for (float& component : transform.end_quaternion) {
+      component = -component;
+    }
+  }
+  return true;
+}
+
+bool PointCloudFusion::prepareBatchMotionTransforms(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
+                                                    const rclcpp::Time& reference_stamp,
+                                                    int time_field_offset,
+                                                    std::vector<MotionTransform>& transforms) const {
+  transforms.clear();
+  transforms.resize(msgs.size());
+  if (!motion_compensation_enable_ || motion_compensation_fixed_frame_.empty()) {
+    return false;
+  }
+
+  const bool recovery_probe = !motion_tf_available_.load(std::memory_order_relaxed);
+  const double timeout_sec = recovery_probe ? 0.0 : motion_compensation_tf_timeout_sec_;
+  bool prepared_any = false;
+  for (std::size_t i = 0; i < msgs.size(); ++i) {
+    if (!msgs[i]) {
+      continue;
+    }
+    prepared_any = true;
+    if (!prepareMotionTransform(*msgs[i], reference_stamp, time_field_offset, timeout_sec, transforms[i])) {
+      motion_tf_available_.store(false, std::memory_order_relaxed);
+      return false;
+    }
+  }
+
+  if (prepared_any && !motion_tf_available_.exchange(true, std::memory_order_relaxed)) {
+    RCLCPP_INFO(this->get_logger(),
+                "Motion-compensation TF is available "
+                "again; resuming compensated fusion");
+  }
+  return prepared_any;
+}
+
 PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch(
     const std::vector<PointCloudMsg::ConstSharedPtr>& msgs, const FusionTiming& timing, std::size_t& valid_point_count) const {
   if (msgs.empty()) {
@@ -884,6 +1047,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   std::optional<uint32_t> x_offset;
   std::optional<uint32_t> y_offset;
   std::optional<uint32_t> z_offset;
+  int time_offset = -1;
   for (const auto& field : input0_msg->fields) {
     if (field.name == "x") {
       x_offset = field.offset;
@@ -891,6 +1055,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       y_offset = field.offset;
     } else if (field.name == "z") {
       z_offset = field.offset;
+    } else if (field.name == motion_compensation_time_field_ && field.datatype == sensor_msgs::msg::PointField::UINT32 &&
+               field.count == 1) {
+      time_offset = static_cast<int>(field.offset);
     }
   }
 
@@ -1017,24 +1184,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
 
   auto output = std::make_unique<PointCloudMsg>();
   output->header.frame_id = target_frame_;
-  rclcpp::Time chosen_stamp;
-  switch (output_stamp_mode_) {
-    case OutputStampMode::Earliest:
-      chosen_stamp = timing.earliest_stamp;
-      break;
-    case OutputStampMode::Mean: {
-      const auto delta = timing.latest_stamp - timing.earliest_stamp;
-      chosen_stamp = timing.earliest_stamp + rclcpp::Duration::from_nanoseconds(delta.nanoseconds() / 2);
-      break;
-    }
-    case OutputStampMode::Input0:
-      chosen_stamp = timing.input0_stamp;
-      break;
-    case OutputStampMode::Latest:
-    default:
-      chosen_stamp = timing.latest_stamp;
-      break;
-  }
+  const rclcpp::Time chosen_stamp = outputStamp(timing);
   output->header.stamp = chosen_stamp;
   output->height = 1;
   output->is_bigendian = is_bigendian;
@@ -1056,7 +1206,11 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   const float rl_z_min = static_cast<float>(range_limits_z_min_);
   const float rl_z_max = static_cast<float>(range_limits_z_max_);
 
-  for (const auto& msg : msgs) {
+  std::vector<MotionTransform> motion_transforms;
+  const bool batch_motion_available = prepareBatchMotionTransforms(msgs, chosen_stamp, time_offset, motion_transforms);
+
+  for (std::size_t input_idx = 0; input_idx < msgs.size(); ++input_idx) {
+    const auto& msg = msgs[input_idx];
     if (!msg) {
       continue;
     }
@@ -1068,12 +1222,14 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       continue;
     }
 
-    // Cache the frame transform once per cloud to avoid repeated TF queries
-    // inside the point loop.
-    const bool apply_transform = msg->header.frame_id != target_frame_;
+    // Apply motion compensation only when every transform required by this
+    // synchronized batch is available.
+    const MotionTransform& motion_transform = motion_transforms[input_idx];
+    const bool motion_transform_available = batch_motion_available;
+    const bool apply_transform = motion_transform_available || msg->header.frame_id != target_frame_;
     tf2::Vector3 translation;
     tf2::Matrix3x3 rotation;
-    if (apply_transform) {
+    if (!motion_transform_available && apply_transform) {
       tf2::Transform tf_transform;
       geometry_msgs::msg::TransformStamped tf_stamped;
       try {
@@ -1092,6 +1248,19 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
 
     const auto* src_data = msg->data.data();
     const size_t total_points = static_cast<size_t>(msg->width) * static_cast<size_t>(msg->height);
+
+    auto transform_point = [&](const uint8_t* point_ptr, float x, float y, float z, float& transformed_x, float& transformed_y,
+                               float& transformed_z) {
+      if (motion_transform_available) {
+        const uint32_t point_time_offset = time_offset >= 0 ? loadUint32(point_ptr, static_cast<std::size_t>(time_offset)) : 0;
+        transformPointInterpolated(motion_transform, point_time_offset, x, y, z, transformed_x, transformed_y, transformed_z);
+        return;
+      }
+      const tf2::Vector3 transformed = rotation * tf2::Vector3(x, y, z) + translation;
+      transformed_x = static_cast<float>(transformed.x());
+      transformed_y = static_cast<float>(transformed.y());
+      transformed_z = static_cast<float>(transformed.z());
+    };
 
     auto emit_point = [&](const uint8_t* point_ptr, float x, float y, float z, bool overwrite_xyz) {
       if (use_all_fields) {
@@ -1133,10 +1302,10 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
           continue;
         }
 
-        const tf2::Vector3 rotated = rotation * tf2::Vector3(x, y, z) + translation;
-        const float transformed_x = static_cast<float>(rotated.x());
-        const float transformed_y = static_cast<float>(rotated.y());
-        const float transformed_z = static_cast<float>(rotated.z());
+        float transformed_x = 0.0F;
+        float transformed_y = 0.0F;
+        float transformed_z = 0.0F;
+        transform_point(point_ptr, x, y, z, transformed_x, transformed_y, transformed_z);
 
         if (check_range && !pointWithinRange(transformed_x, transformed_y, transformed_z, rl_x_min, rl_x_max, rl_y_min, rl_y_max,
                                              rl_z_min, rl_z_max)) {
@@ -1173,10 +1342,10 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
         continue;
       }
 
-      const tf2::Vector3 rotated = rotation * tf2::Vector3(x, y, z) + translation;
-      const float transformed_x = static_cast<float>(rotated.x());
-      const float transformed_y = static_cast<float>(rotated.y());
-      const float transformed_z = static_cast<float>(rotated.z());
+      float transformed_x = 0.0F;
+      float transformed_y = 0.0F;
+      float transformed_z = 0.0F;
+      transform_point(point_ptr, x, y, z, transformed_x, transformed_y, transformed_z);
 
       if (check_range && !pointWithinRange(transformed_x, transformed_y, transformed_z, rl_x_min, rl_x_max, rl_y_min, rl_y_max,
                                            rl_z_min, rl_z_max)) {
@@ -1303,7 +1472,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   }
 
   // Find x, y, z field offsets
-  int x_offset = -1, y_offset = -1, z_offset = -1;
+  int x_offset = -1, y_offset = -1, z_offset = -1, time_offset = -1;
   for (const auto& field : input0_msg->fields) {
     if (field.name == "x")
       x_offset = field.offset;
@@ -1311,6 +1480,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       y_offset = field.offset;
     else if (field.name == "z")
       z_offset = field.offset;
+    else if (field.name == motion_compensation_time_field_ && field.datatype == sensor_msgs::msg::PointField::UINT32 &&
+             field.count == 1)
+      time_offset = static_cast<int>(field.offset);
   }
 
   if (x_offset < 0 || y_offset < 0 || z_offset < 0) {
@@ -1442,6 +1614,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   // Total input capacity is slot_size * number_of_inputs
   const size_t num_inputs = msgs.size();
   size_t total_input_capacity = slot_size * num_inputs;
+  const rclcpp::Time chosen_stamp = outputStamp(timing);
+  std::vector<MotionTransform> motion_transforms;
+  const bool batch_motion_available = prepareBatchMotionTransforms(msgs, chosen_stamp, time_offset, motion_transforms);
 
   // Reset batch with fixed slots.
   if (!cuda_context_->resetBatch(total_input_capacity, slot_size, point_step, fused_point_step, x_offset, y_offset, z_offset,
@@ -1462,11 +1637,15 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       continue;
     }
 
-    const bool apply_transform = (msg->header.frame_id != target_frame_);
+    // Apply motion compensation only when every transform required by this
+    // synchronized batch is available.
+    const MotionTransform& motion_transform = motion_transforms[i];
+    const bool motion_transform_available = batch_motion_available;
+    const bool apply_transform = motion_transform_available || msg->header.frame_id != target_frame_;
     float rotation_matrix[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
     float translation[3] = {0, 0, 0};
 
-    if (apply_transform) {
+    if (!motion_transform_available && apply_transform) {
       try {
         auto tf_stamped = tf_buffer_->lookupTransform(target_frame_, msg->header.frame_id, msg->header.stamp,
                                                       rclcpp::Duration::from_seconds(0.1));
@@ -1501,7 +1680,10 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     // Pass desired_points for strided sampling (0 = all points)
     const int desired_points = (fixed_points_per_input_cloud_ > 0) ? static_cast<int>(fixed_points_per_input_cloud_) : 0;
 
-    if (!cuda_context_->addCloud(data_ptr, num_points, rotation_matrix, translation, apply_transform, i, desired_points)) {
+    if (!cuda_context_->addCloud(data_ptr, num_points, rotation_matrix, translation, apply_transform, i, desired_points,
+                                 motion_transform_available, time_offset, motion_transform.max_time_offset,
+                                 motion_transform.start_translation.data(), motion_transform.end_translation.data(),
+                                 motion_transform.start_quaternion.data(), motion_transform.end_quaternion.data())) {
       RCLCPP_ERROR(this->get_logger(), "CUDA addCloud failed");
       continue;
     }
@@ -1510,24 +1692,6 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   // Get result directly into output vector
   auto output = std::make_unique<PointCloudMsg>();
   output->header.frame_id = target_frame_;
-  rclcpp::Time chosen_stamp;
-  switch (output_stamp_mode_) {
-    case OutputStampMode::Earliest:
-      chosen_stamp = timing.earliest_stamp;
-      break;
-    case OutputStampMode::Mean: {
-      const auto delta = timing.latest_stamp - timing.earliest_stamp;
-      chosen_stamp = timing.earliest_stamp + rclcpp::Duration::from_nanoseconds(delta.nanoseconds() / 2);
-      break;
-    }
-    case OutputStampMode::Input0:
-      chosen_stamp = timing.input0_stamp;
-      break;
-    case OutputStampMode::Latest:
-    default:
-      chosen_stamp = timing.latest_stamp;
-      break;
-  }
   output->header.stamp = chosen_stamp;
   output->height = 1;
   output->is_bigendian = is_bigendian;

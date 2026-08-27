@@ -10,6 +10,42 @@
 namespace point_cloud_fusion {
 namespace cuda {
 
+__device__ inline unsigned int loadUint32Unaligned(const uint8_t* source) {
+  unsigned int value = 0;
+  uint8_t* destination = reinterpret_cast<uint8_t*>(&value);
+  for (int index = 0; index < 4; ++index) destination[index] = source[index];
+  return value;
+}
+
+__device__ inline void transformPointInterpolated(const CloudMetadata& meta,
+                                                  unsigned int time_offset,
+                                                  float x,
+                                                  float y,
+                                                  float z,
+                                                  float& transformed_x,
+                                                  float& transformed_y,
+                                                  float& transformed_z) {
+  const float alpha =
+      meta.max_time_offset > 0 ? fminf(1.0F, static_cast<float>(time_offset) / static_cast<float>(meta.max_time_offset)) : 0.0F;
+  const float inverse_alpha = 1.0F - alpha;
+  float qx = inverse_alpha * meta.start_quaternion[0] + alpha * meta.end_quaternion[0];
+  float qy = inverse_alpha * meta.start_quaternion[1] + alpha * meta.end_quaternion[1];
+  float qz = inverse_alpha * meta.start_quaternion[2] + alpha * meta.end_quaternion[2];
+  float qw = inverse_alpha * meta.start_quaternion[3] + alpha * meta.end_quaternion[3];
+  const float inverse_norm = rsqrtf(qx * qx + qy * qy + qz * qz + qw * qw);
+  qx *= inverse_norm;
+  qy *= inverse_norm;
+  qz *= inverse_norm;
+  qw *= inverse_norm;
+
+  const float tx = 2.0F * (qy * z - qz * y);
+  const float ty = 2.0F * (qz * x - qx * z);
+  const float tz = 2.0F * (qx * y - qy * x);
+  transformed_x = x + qw * tx + (qy * tz - qz * ty) + inverse_alpha * meta.start_translation[0] + alpha * meta.end_translation[0];
+  transformed_y = y + qw * ty + (qz * tx - qx * tz) + inverse_alpha * meta.start_translation[1] + alpha * meta.end_translation[1];
+  transformed_z = z + qw * tz + (qx * ty - qy * tx) + inverse_alpha * meta.start_translation[2] + alpha * meta.end_translation[2];
+}
+
 // Fused kernel: Transform, Check, and Append using Atomic Counter with Strided
 // Sampling
 __global__ void fusedTransformKernel(const uint8_t* input_points,
@@ -83,7 +119,10 @@ __global__ void fusedTransformKernel(const uint8_t* input_points,
 
   float transformed_x, transformed_y, transformed_z;
 
-  if (meta.apply_transform) {
+  if (meta.motion_compensation) {
+    const unsigned int time_offset = meta.time_offset >= 0 ? loadUint32Unaligned(point_ptr + meta.time_offset) : 0;
+    transformPointInterpolated(meta, time_offset, x, y, z, transformed_x, transformed_y, transformed_z);
+  } else if (meta.apply_transform) {
     transformed_x = meta.rotation[0] * x + meta.rotation[1] * y + meta.rotation[2] * z + meta.translation[0];
     transformed_y = meta.rotation[3] * x + meta.rotation[4] * y + meta.rotation[5] * z + meta.translation[1];
     transformed_z = meta.rotation[6] * x + meta.rotation[7] * y + meta.rotation[8] * z + meta.translation[2];
@@ -337,7 +376,14 @@ bool CudaTransformContext::addCloud(const uint8_t* input_data,
                                     const float* translation_host,
                                     bool apply_transform,
                                     size_t slot_index,
-                                    int desired_points) {
+                                    int desired_points,
+                                    bool motion_compensation,
+                                    int time_offset,
+                                    unsigned int max_time_offset,
+                                    const float* start_translation,
+                                    const float* end_translation,
+                                    const float* start_quaternion,
+                                    const float* end_quaternion) {
   if (num_points == 0) return true;
 
   // Compute strided sampling parameters for uniform spatial distribution
@@ -361,6 +407,9 @@ bool CudaTransformContext::addCloud(const uint8_t* input_data,
   meta.num_samples = num_samples;
   meta.stride = stride;
   meta.apply_transform = apply_transform ? 1 : 0;
+  meta.motion_compensation = motion_compensation ? 1 : 0;
+  meta.time_offset = time_offset;
+  meta.max_time_offset = max_time_offset;
 
   if (apply_transform) {
     memcpy(meta.rotation, rotation_matrix_host, 9 * sizeof(float));
@@ -368,6 +417,20 @@ bool CudaTransformContext::addCloud(const uint8_t* input_data,
   } else {
     memset(meta.rotation, 0, 9 * sizeof(float));
     memset(meta.translation, 0, 3 * sizeof(float));
+  }
+
+  if (motion_compensation) {
+    memcpy(meta.start_translation, start_translation, 3 * sizeof(float));
+    memcpy(meta.end_translation, end_translation, 3 * sizeof(float));
+    memcpy(meta.start_quaternion, start_quaternion, 4 * sizeof(float));
+    memcpy(meta.end_quaternion, end_quaternion, 4 * sizeof(float));
+  } else {
+    memset(meta.start_translation, 0, 3 * sizeof(float));
+    memset(meta.end_translation, 0, 3 * sizeof(float));
+    memset(meta.start_quaternion, 0, 4 * sizeof(float));
+    memset(meta.end_quaternion, 0, 4 * sizeof(float));
+    meta.start_quaternion[3] = 1.0F;
+    meta.end_quaternion[3] = 1.0F;
   }
 
   if (host_metadata_.size() <= slot_index) {
