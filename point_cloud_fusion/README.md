@@ -66,4 +66,4 @@ flowchart LR
 | `params` | `os.path.join(get_package_share_directory("point_cloud_fusion"), "config", "params.yml")` | Path to the parameter file. |
 | `log_level` | `"info"` | ROS logging level (debug, info, warn, error, fatal) |
 | `use_sim_time` | `"false"` | Use the simulation clock. |
-| `trace` | `"false"` | Enable ROS tracing. |
+| `ros_tracing` | `"false"` | Enable ROS tracing. |
