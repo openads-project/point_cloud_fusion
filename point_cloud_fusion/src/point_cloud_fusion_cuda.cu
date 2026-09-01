@@ -310,6 +310,11 @@ bool CudaTransformContext::resetBatch(size_t total_max_points,
                                       float z_min,
                                       float z_max,
                                       bool range_enable) {
+  if (current_input_point_step_ != 0 && current_input_point_step_ != input_point_step) {
+    if (d_input_points_) cudaFree(d_input_points_);
+    d_input_points_ = nullptr;
+    input_capacity_ = 0;
+  }
   current_input_point_step_ = input_point_step;
   current_output_point_step_ = output_point_step;
   current_src_x_offset_ = src_x_offset;

@@ -162,7 +162,7 @@ class PointCloudFusion : public rclcpp::Node {
    */
   bool prepareBatchMotionTransforms(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
                                     const rclcpp::Time& reference_stamp,
-                                    int time_field_offset,
+                                    const std::vector<int>& time_field_offsets,
                                     std::vector<MotionTransform>& transforms) const;
 
   /**
@@ -265,6 +265,10 @@ class PointCloudFusion : public rclcpp::Node {
   double motion_compensation_time_scale_sec_ = 1.0e-9;
   double motion_compensation_tf_timeout_sec_ = 0.1;
   mutable std::atomic_bool motion_tf_available_{true};
+  mutable std::atomic_uint64_t skipped_cloud_count_{0};
+  mutable std::atomic_uint64_t missing_xyz_count_{0};
+  mutable std::atomic_uint64_t incompatible_field_count_{0};
+  mutable std::atomic_uint64_t zero_filled_field_count_{0};
   OutputStampMode output_stamp_mode_ = OutputStampMode::Earliest;
   std::string output_stamp_mode_param_ = "earliest";
   std::string target_frame_ = "base_link";

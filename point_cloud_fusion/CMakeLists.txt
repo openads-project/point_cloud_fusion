@@ -164,6 +164,10 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_motion_compensation test/test_motion_compensation.cpp)
   target_include_directories(test_motion_compensation PRIVATE include)
+
+  ament_add_gtest(test_point_cloud_layout test/test_point_cloud_layout.cpp)
+  target_include_directories(test_point_cloud_layout PRIVATE include)
+  ament_target_dependencies(test_point_cloud_layout sensor_msgs)
 endif()
 
 ament_package()
