@@ -16,6 +16,12 @@
 
 namespace point_cloud_fusion::detail {
 
+/**
+ * @brief Return the size in bytes of one PointField datatype element.
+ *
+ * @param datatype PointField datatype identifier.
+ * @return Element size in bytes, or zero if the datatype is unsupported.
+ */
 inline std::size_t fieldDatatypeSize(uint8_t datatype) {
   using sensor_msgs::msg::PointField;
   switch (datatype) {
@@ -66,25 +72,66 @@ struct BatchLayout {
   std::vector<std::string> conflicting_fields;
 };
 
+/**
+ * @brief Check whether two fields have the same name and element type.
+ *
+ * @param lhs First field descriptor.
+ * @param rhs Second field descriptor.
+ * @return True when the field names, datatypes, and element counts match.
+ */
 inline bool sameType(const sensor_msgs::msg::PointField& lhs, const sensor_msgs::msg::PointField& rhs) {
   return lhs.name == rhs.name && lhs.datatype == rhs.datatype && lhs.count == rhs.count;
 }
 
+/**
+ * @brief Check whether a field descriptor fits within a point record.
+ *
+ * @param field Field descriptor to validate.
+ * @param point_step Size in bytes of one point record.
+ * @return True when the datatype and count are valid and the field is in bounds.
+ */
 inline bool validField(const sensor_msgs::msg::PointField& field, uint32_t point_step) {
   const auto size = fieldDatatypeSize(field.datatype);
   return size > 0 && field.count > 0 && static_cast<std::size_t>(field.offset) + size * field.count <= point_step;
 }
 
+/**
+ * @brief Find a field descriptor by name in a point cloud.
+ *
+ * @param cloud Point cloud whose fields are searched.
+ * @param name Field name to find.
+ * @return Pointer to the matching descriptor, or nullptr when it is absent.
+ */
 inline const sensor_msgs::msg::PointField* findField(const sensor_msgs::msg::PointCloud2& cloud, const std::string& name) {
   const auto it =
       std::find_if(cloud.fields.begin(), cloud.fields.end(), [&name](const auto& field) { return field.name == name; });
   return it == cloud.fields.end() ? nullptr : &*it;
 }
 
+/**
+ * @brief Check whether a field is a valid scalar FLOAT32 XYZ component.
+ *
+ * @param field Field descriptor to validate; may be nullptr.
+ * @param point_step Size in bytes of one point record.
+ * @return True when the field is a valid in-bounds scalar FLOAT32 value.
+ */
 inline bool validXyzField(const sensor_msgs::msg::PointField* field, uint32_t point_step) {
-  return field && field->datatype == sensor_msgs::msg::PointField::FLOAT32 && field->count == 1 && validField(*field, point_step);
+  return field != nullptr && field->datatype == sensor_msgs::msg::PointField::FLOAT32 && field->count == 1 &&
+         validField(*field, point_step);
 }
 
+/**
+ * @brief Build a common output layout and per-input copy plan for a cloud batch.
+ *
+ * Invalid inputs are retained in the result with a rejection reason. Depending
+ * on the requested fields and input compatibility, the result either preserves
+ * a homogeneous input layout or builds a packed layout for compatible fields.
+ *
+ * @param clouds Point clouds to validate and combine.
+ * @param requested_fields Optional ordered list of fields to include.
+ * @param time_field_name Name of the per-point time-offset field.
+ * @return Output layout and copy plan for every input cloud.
+ */
 inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointCloud2::ConstSharedPtr>& clouds,
                                     const std::vector<std::string>& requested_fields,
                                     const std::string& time_field_name) {
@@ -110,7 +157,8 @@ inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointClo
     input.x_offset = x->offset;
     input.y_offset = y->offset;
     input.z_offset = z->offset;
-    if (const auto* time = findField(*cloud, time_field_name); time && time->datatype == sensor_msgs::msg::PointField::UINT32 &&
+    if (const auto* time = findField(*cloud, time_field_name); time != nullptr &&
+                                                               time->datatype == sensor_msgs::msg::PointField::UINT32 &&
                                                                time->count == 1 && validField(*time, cloud->point_step)) {
       input.time_offset = static_cast<int>(time->offset);
     }
@@ -133,12 +181,12 @@ inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointClo
       const sensor_msgs::msg::PointField* descriptor = nullptr;
       for (const auto index : valid_indices) {
         const auto* candidate = findField(*clouds[index], name);
-        if (candidate && validField(*candidate, clouds[index]->point_step)) {
+        if (candidate != nullptr && validField(*candidate, clouds[index]->point_step)) {
           descriptor = candidate;
           break;
         }
       }
-      if (descriptor) selected.push_back(*descriptor);
+      if (descriptor != nullptr) selected.push_back(*descriptor);
     }
   } else if (result.homogeneous_fast_path) {
     selected = first.fields;
@@ -158,7 +206,7 @@ inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointClo
       }
     }
     for (const auto& name : order) {
-      if (conflicts.count(name)) {
+      if (conflicts.count(name) != 0U) {
         result.conflicting_fields.push_back(name);
       } else {
         selected.push_back(descriptors.at(name));
@@ -197,7 +245,7 @@ inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointClo
     if (input.whole_point_copy) continue;
     for (const auto& destination : result.fields) {
       const auto* source = findField(cloud, destination.name);
-      if (source && sameType(*source, destination) && validField(*source, cloud.point_step)) {
+      if (source != nullptr && sameType(*source, destination) && validField(*source, cloud.point_step)) {
         input.copies.push_back({source->offset, destination.offset, fieldDatatypeSize(source->datatype) * source->count});
       } else {
         input.zero_filled_fields.push_back(destination.name);

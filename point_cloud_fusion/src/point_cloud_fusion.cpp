@@ -31,26 +31,6 @@ RCLCPP_COMPONENTS_REGISTER_NODE(point_cloud_fusion::PointCloudFusion)
 
 namespace {
 
-inline std::size_t pointFieldDatatypeSize(uint8_t datatype) {
-  using sensor_msgs::msg::PointField;
-  switch (datatype) {
-    case PointField::INT8:
-    case PointField::UINT8:
-      return 1;
-    case PointField::INT16:
-    case PointField::UINT16:
-      return 2;
-    case PointField::INT32:
-    case PointField::UINT32:
-    case PointField::FLOAT32:
-      return 4;
-    case PointField::FLOAT64:
-      return 8;
-    default:
-      return 0;
-  }
-}
-
 /**
  * @brief Check whether a point lies inside the configured inclusive XYZ bounds.
  *
@@ -1059,7 +1039,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     incompatible_field_count_.fetch_add(layout.conflicting_fields.size(), std::memory_order_relaxed);
     std::ostringstream names;
     for (std::size_t i = 0; i < layout.conflicting_fields.size(); ++i) {
-      if (i) names << ", ";
+      if (i != 0U) names << ", ";
       names << layout.conflicting_fields[i];
     }
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
@@ -1155,7 +1135,8 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
 
     for (std::size_t sample = 0; sample < samples; ++sample) {
       const std::size_t point_index =
-          samples == total_points ? sample : std::min(static_cast<std::size_t>(sample * stride), total_points - 1);
+          samples == total_points ? sample
+                                  : std::min(static_cast<std::size_t>(static_cast<double>(sample) * stride), total_points - 1);
       const uint8_t* source = byteOffset(msg->data.data(), point_index * msg->point_step);
       const float x = loadFloat(source, input.x_offset);
       const float y = loadFloat(source, input.y_offset);
