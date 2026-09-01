@@ -55,6 +55,10 @@ else
     touch "$CMAKE_CACHE_DIR/cuda-unavailable"
 fi
 
+set +e
+set +u
+set +o pipefail
+
 # TODO: remove once [https://github.com/ros2/ros2_tracing/issues/211] is solved in released version
 # overwrite released ros2_tracing packages with fork to support
 # 'message-link instrumentation' and 'dual-session mode' in jazzy
