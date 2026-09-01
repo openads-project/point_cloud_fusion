@@ -22,9 +22,9 @@ jobs:
           base-image: rwthika/ros2:jazzy
           rmw-implementation: rmw_zenoh_cpp
           command: ros2 launch point_cloud_fusion point_cloud_fusion.launch.py
-          enable-industrial-ci: true
+          enable-industrial-ci: "true"
           cmake-args: -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DREQUIRE_CUDA=ON
-          enable-recursive-vcs-import: false
+          enable-recursive-vcs-import: "false"
           additional-slim-build-args: >-
             --preserve-path /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so
             --preserve-path /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcudart.so.12
