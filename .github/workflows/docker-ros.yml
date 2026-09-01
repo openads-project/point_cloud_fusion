@@ -15,7 +15,7 @@ jobs:
   docker-ros:
     runs-on: ubuntu-latest
     steps:
-      - uses: ika-rwth-aachen/docker-ros@fix-inputs
+      - uses: ika-rwth-aachen/docker-ros@main
         with:
           platform: amd64,arm64
           target: dev,run
