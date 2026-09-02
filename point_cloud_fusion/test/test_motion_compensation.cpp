@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cmath>
+#include <memory>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -9,6 +11,28 @@
 
 namespace point_cloud_fusion {
 namespace {
+
+struct TestCloud {
+  std::size_t point_step;
+  std::vector<int> fields;
+};
+
+TEST(MotionCompensation, ExcludesIncompatibleCloudsWithoutChangingBatchIndices) {
+  using CloudPtr = std::shared_ptr<const TestCloud>;
+  const std::vector<int> reference_fields{1, 2, 3};
+  const CloudPtr compatible = std::make_shared<TestCloud>(TestCloud{16, reference_fields});
+  const CloudPtr incompatible_point_step = std::make_shared<TestCloud>(TestCloud{20, reference_fields});
+  const CloudPtr incompatible_fields = std::make_shared<TestCloud>(TestCloud{16, std::vector<int>{1, 2}});
+  const std::vector<CloudPtr> msgs{compatible, incompatible_point_step, nullptr, incompatible_fields};
+
+  const auto motion_msgs = selectMotionCompatibleClouds(msgs, 16, reference_fields);
+
+  ASSERT_EQ(motion_msgs.size(), msgs.size());
+  EXPECT_EQ(motion_msgs[0], compatible);
+  EXPECT_EQ(motion_msgs[1], nullptr);
+  EXPECT_EQ(motion_msgs[2], nullptr);
+  EXPECT_EQ(motion_msgs[3], nullptr);
+}
 
 TEST(MotionCompensation, InterpolatesTranslationAtPointTime) {
   MotionTransform transform;
