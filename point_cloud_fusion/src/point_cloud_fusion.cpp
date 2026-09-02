@@ -1206,12 +1206,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   const float rl_z_min = static_cast<float>(range_limits_z_min_);
   const float rl_z_max = static_cast<float>(range_limits_z_max_);
 
-  std::vector<PointCloudMsg::ConstSharedPtr> motion_msgs = msgs;
-  for (auto& motion_msg : motion_msgs) {
-    if (motion_msg && (motion_msg->point_step != point_step || motion_msg->fields != input0_fields)) {
-      motion_msg.reset();
-    }
-  }
+  const auto motion_msgs = selectMotionCompatibleClouds(msgs, point_step, input0_fields);
   std::vector<MotionTransform> motion_transforms;
   const bool batch_motion_available = prepareBatchMotionTransforms(motion_msgs, chosen_stamp, time_offset, motion_transforms);
   for (std::size_t input_idx = 0; input_idx < msgs.size(); ++input_idx) {
@@ -1620,8 +1615,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   const size_t num_inputs = msgs.size();
   size_t total_input_capacity = slot_size * num_inputs;
   const rclcpp::Time chosen_stamp = outputStamp(timing);
+  const auto motion_msgs = selectMotionCompatibleClouds(msgs, point_step, input0_fields);
   std::vector<MotionTransform> motion_transforms;
-  const bool batch_motion_available = prepareBatchMotionTransforms(msgs, chosen_stamp, time_offset, motion_transforms);
+  const bool batch_motion_available = prepareBatchMotionTransforms(motion_msgs, chosen_stamp, time_offset, motion_transforms);
 
   // Reset batch with fixed slots.
   if (!cuda_context_->resetBatch(total_input_capacity, slot_size, point_step, fused_point_step, x_offset, y_offset, z_offset,
