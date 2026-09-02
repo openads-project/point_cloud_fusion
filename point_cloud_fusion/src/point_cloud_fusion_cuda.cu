@@ -420,6 +420,9 @@ bool CudaTransformContext::addCloud(const uint8_t* input_data,
   }
 
   if (motion_compensation) {
+    if (!start_translation || !end_translation || !start_quaternion || !end_quaternion) {
+      return false;
+    }
     memcpy(meta.start_translation, start_translation, 3 * sizeof(float));
     memcpy(meta.end_translation, end_translation, 3 * sizeof(float));
     memcpy(meta.start_quaternion, start_quaternion, 4 * sizeof(float));
