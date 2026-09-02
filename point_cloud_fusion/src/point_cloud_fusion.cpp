@@ -1206,9 +1206,14 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   const float rl_z_min = static_cast<float>(range_limits_z_min_);
   const float rl_z_max = static_cast<float>(range_limits_z_max_);
 
+  std::vector<PointCloudMsg::ConstSharedPtr> motion_msgs = msgs;
+  for (auto& motion_msg : motion_msgs) {
+    if (motion_msg && (motion_msg->point_step != point_step || motion_msg->fields != input0_fields)) {
+      motion_msg.reset();
+    }
+  }
   std::vector<MotionTransform> motion_transforms;
-  const bool batch_motion_available = prepareBatchMotionTransforms(msgs, chosen_stamp, time_offset, motion_transforms);
-
+  const bool batch_motion_available = prepareBatchMotionTransforms(motion_msgs, chosen_stamp, time_offset, motion_transforms);
   for (std::size_t input_idx = 0; input_idx < msgs.size(); ++input_idx) {
     const auto& msg = msgs[input_idx];
     if (!msg) {
