@@ -26,7 +26,13 @@ struct CloudMetadata {
   int apply_transform;  // bool as int for alignment
   float rotation[9];
   float translation[3];
-  int pad;  // alignment padding
+  int motion_compensation;
+  int time_offset;
+  unsigned int max_time_offset;
+  float start_translation[3];
+  float end_translation[3];
+  float start_quaternion[4];
+  float end_quaternion[4];
 };
 
 /**
@@ -99,7 +105,14 @@ class CudaTransformContext {
                 const float* translation_host,
                 bool apply_transform,
                 size_t slot_index,
-                int desired_points = 0);
+                int desired_points = 0,
+                bool motion_compensation = false,
+                int time_offset = -1,
+                unsigned int max_time_offset = 0,
+                const float* start_translation = nullptr,
+                const float* end_translation = nullptr,
+                const float* start_quaternion = nullptr,
+                const float* end_quaternion = nullptr);
 
   /**
    * @brief Get the accumulated results from the batch
