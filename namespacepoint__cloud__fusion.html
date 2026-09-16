@@ -28,7 +28,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">point_cloud_fusion<span id="projectnumber">&#160;v1.4.0</span>
+   <div id="projectname">point_cloud_fusion<span id="projectnumber">&#160;v1.5.0</span>
    </div>
   </td>
  </tr>
@@ -100,6 +100,7 @@ $(function(){initNavTree('namespacepoint__cloud__fusion.html',''); initResizable
   <div class="summary">
 <a href="#namespaces">Namespaces</a> &#124;
 <a href="#nested-classes">Classes</a> &#124;
+<a href="#func-members">Functions</a> &#124;
 <a href="#var-members">Variables</a>  </div>
   <div class="headertitle"><div class="title">point_cloud_fusion Namespace Reference</div></div>
 </div><!--header-->
@@ -116,9 +117,22 @@ Classes</h2></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structpoint__cloud__fusion_1_1is__vector_3_01std_1_1vector_3_01T_00_01A_01_4_01_4.html">is_vector&lt; std::vector&lt; T, A &gt; &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structpoint__cloud__fusion_1_1MotionTransform.html">MotionTransform</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Endpoint transforms for fast scan motion interpolation.  <a href="structpoint__cloud__fusion_1_1MotionTransform.html#details">More...</a><br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classpoint__cloud__fusion_1_1PointCloudFusion.html">PointCloudFusion</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classpoint__cloud__fusion_1_1PointCloudFusion.html" title="PointCloudFusion class.">PointCloudFusion</a> class.  <a href="classpoint__cloud__fusion_1_1PointCloudFusion.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="func-members" name="func-members"></a>
+Functions</h2></td></tr>
+<tr class="memitem:a68d769c8ce8a72e528d1ac3945a091f0" id="r_a68d769c8ce8a72e528d1ac3945a091f0"><td class="memTemplParams" colspan="2">template&lt;typename PointCloudPtr , typename Fields &gt; </td></tr>
+<tr class="memitem:a68d769c8ce8a72e528d1ac3945a091f0"><td class="memTemplItemLeft" align="right" valign="top">std::vector&lt; PointCloudPtr &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="#a68d769c8ce8a72e528d1ac3945a091f0">selectMotionCompatibleClouds</a> (const std::vector&lt; PointCloudPtr &gt; &amp;msgs, std::size_t <a class="el" href="test__motion__compensation_8cpp.html#af49223dcd0550f657fa7e649ec1028bd">point_step</a>, const Fields &amp;<a class="el" href="test__motion__compensation_8cpp.html#aef54c91611086ab48d7a51a37d6fa8df">fields</a>)</td></tr>
+<tr class="memdesc:a68d769c8ce8a72e528d1ac3945a091f0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Keep batch indices while excluding clouds with incompatible layouts.  <br /></td></tr>
+<tr class="separator:a68d769c8ce8a72e528d1ac3945a091f0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab863e63fb4949bef72f15ff23bd59b81" id="r_ab863e63fb4949bef72f15ff23bd59b81"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ab863e63fb4949bef72f15ff23bd59b81">transformPointInterpolated</a> (const <a class="el" href="structpoint__cloud__fusion_1_1MotionTransform.html">MotionTransform</a> &amp;transform, uint32_t time_offset, float x, float y, float z, float &amp;transformed_x, float &amp;transformed_y, float &amp;transformed_z)</td></tr>
+<tr class="memdesc:ab863e63fb4949bef72f15ff23bd59b81"><td class="mdescLeft">&#160;</td><td class="mdescRight">Transform a point using normalized quaternion interpolation.  <br /></td></tr>
+<tr class="separator:ab863e63fb4949bef72f15ff23bd59b81"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="var-members" name="var-members"></a>
 Variables</h2></td></tr>
@@ -126,6 +140,145 @@ Variables</h2></td></tr>
 <tr class="memitem:a358b566c0327fab9f92f072b3a10e865"><td class="memTemplItemLeft" align="right" valign="top">constexpr bool&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="#a358b566c0327fab9f92f072b3a10e865">is_vector_v</a> = <a class="el" href="structpoint__cloud__fusion_1_1is__vector.html">is_vector</a>&lt;C&gt;::value</td></tr>
 <tr class="separator:a358b566c0327fab9f92f072b3a10e865"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
+<h2 class="groupheader">Function Documentation</h2>
+<a id="a68d769c8ce8a72e528d1ac3945a091f0" name="a68d769c8ce8a72e528d1ac3945a091f0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a68d769c8ce8a72e528d1ac3945a091f0">&#9670;&#160;</a></span>selectMotionCompatibleClouds()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename PointCloudPtr , typename Fields &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">std::vector&lt; PointCloudPtr &gt; point_cloud_fusion::selectMotionCompatibleClouds </td>
+          <td>(</td>
+          <td class="paramtype">const std::vector&lt; PointCloudPtr &gt; &amp;</td>          <td class="paramname"><span class="paramname"><em>msgs</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>point_step</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const Fields &amp;</td>          <td class="paramname"><span class="paramname"><em>fields</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Keep batch indices while excluding clouds with incompatible layouts. </p>
+
+<p class="definition">Definition at line <a class="el" href="motion__compensation_8hpp_source.html#l00032">32</a> of file <a class="el" href="motion__compensation_8hpp_source.html">motion_compensation.hpp</a>.</p>
+<div class="fragment"><div class="line"><span class="lineno">   34</span>                                                                              {</div>
+<div class="line"><span class="lineno">   35</span>  std::vector&lt;PointCloudPtr&gt; motion_msgs = msgs;</div>
+<div class="line"><span class="lineno">   36</span>  <span class="keywordflow">for</span> (<span class="keyword">auto</span>&amp; motion_msg : motion_msgs) {</div>
+<div class="line"><span class="lineno">   37</span>    <span class="keywordflow">if</span> (motion_msg &amp;&amp; (motion_msg-&gt;point_step != <a class="code hl_variable" href="test__motion__compensation_8cpp.html#af49223dcd0550f657fa7e649ec1028bd">point_step</a> || motion_msg-&gt;fields != <a class="code hl_variable" href="test__motion__compensation_8cpp.html#aef54c91611086ab48d7a51a37d6fa8df">fields</a>)) {</div>
+<div class="line"><span class="lineno">   38</span>      motion_msg.reset();</div>
+<div class="line"><span class="lineno">   39</span>    }</div>
+<div class="line"><span class="lineno">   40</span>  }</div>
+<div class="line"><span class="lineno">   41</span>  <span class="keywordflow">return</span> motion_msgs;</div>
+<div class="line"><span class="lineno">   42</span>}</div>
+<div class="ttc" id="atest__motion__compensation_8cpp_html_aef54c91611086ab48d7a51a37d6fa8df"><div class="ttname"><a href="test__motion__compensation_8cpp.html#aef54c91611086ab48d7a51a37d6fa8df">fields</a></div><div class="ttdeci">std::vector&lt; int &gt; fields</div><div class="ttdef"><b>Definition</b> <a href="test__motion__compensation_8cpp_source.html#l00017">test_motion_compensation.cpp:17</a></div></div>
+<div class="ttc" id="atest__motion__compensation_8cpp_html_af49223dcd0550f657fa7e649ec1028bd"><div class="ttname"><a href="test__motion__compensation_8cpp.html#af49223dcd0550f657fa7e649ec1028bd">point_step</a></div><div class="ttdeci">std::size_t point_step</div><div class="ttdef"><b>Definition</b> <a href="test__motion__compensation_8cpp_source.html#l00016">test_motion_compensation.cpp:16</a></div></div>
+</div><!-- fragment -->
+</div>
+</div>
+<a id="ab863e63fb4949bef72f15ff23bd59b81" name="ab863e63fb4949bef72f15ff23bd59b81"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab863e63fb4949bef72f15ff23bd59b81">&#9670;&#160;</a></span>transformPointInterpolated()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void point_cloud_fusion::transformPointInterpolated </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="structpoint__cloud__fusion_1_1MotionTransform.html">MotionTransform</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>transform</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint32_t</td>          <td class="paramname"><span class="paramname"><em>time_offset</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float</td>          <td class="paramname"><span class="paramname"><em>x</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float</td>          <td class="paramname"><span class="paramname"><em>y</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float</td>          <td class="paramname"><span class="paramname"><em>z</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float &amp;</td>          <td class="paramname"><span class="paramname"><em>transformed_x</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float &amp;</td>          <td class="paramname"><span class="paramname"><em>transformed_y</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float &amp;</td>          <td class="paramname"><span class="paramname"><em>transformed_z</em></span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Transform a point using normalized quaternion interpolation. </p>
+
+<p class="definition">Definition at line <a class="el" href="motion__compensation_8hpp_source.html#l00047">47</a> of file <a class="el" href="motion__compensation_8hpp_source.html">motion_compensation.hpp</a>.</p>
+<div class="fragment"><div class="line"><span class="lineno">   54</span>                                                             {</div>
+<div class="line"><span class="lineno">   55</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> alpha = transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a130fdb0134186c90ccb8823817124463">max_time_offset</a> &gt; 0</div>
+<div class="line"><span class="lineno">   56</span>                          ? std::min(1.0F, <span class="keyword">static_cast&lt;</span><span class="keywordtype">float</span><span class="keyword">&gt;</span>(time_offset) / <span class="keyword">static_cast&lt;</span><span class="keywordtype">float</span><span class="keyword">&gt;</span>(transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a130fdb0134186c90ccb8823817124463">max_time_offset</a>))</div>
+<div class="line"><span class="lineno">   57</span>                          : 0.0F;</div>
+<div class="line"><span class="lineno">   58</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> inverse_alpha = 1.0F - alpha;</div>
+<div class="line"><span class="lineno">   59</span> </div>
+<div class="line"><span class="lineno">   60</span>  <span class="keywordtype">float</span> qx = inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[0] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">end_quaternion</a>[0];</div>
+<div class="line"><span class="lineno">   61</span>  <span class="keywordtype">float</span> qy = inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[1] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">end_quaternion</a>[1];</div>
+<div class="line"><span class="lineno">   62</span>  <span class="keywordtype">float</span> qz = inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[2] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">end_quaternion</a>[2];</div>
+<div class="line"><span class="lineno">   63</span>  <span class="keywordtype">float</span> qw = inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[3] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">end_quaternion</a>[3];</div>
+<div class="line"><span class="lineno">   64</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> inverse_norm = 1.0F / std::sqrt(qx * qx + qy * qy + qz * qz + qw * qw);</div>
+<div class="line"><span class="lineno">   65</span>  qx *= inverse_norm;</div>
+<div class="line"><span class="lineno">   66</span>  qy *= inverse_norm;</div>
+<div class="line"><span class="lineno">   67</span>  qz *= inverse_norm;</div>
+<div class="line"><span class="lineno">   68</span>  qw *= inverse_norm;</div>
+<div class="line"><span class="lineno">   69</span> </div>
+<div class="line"><span class="lineno">   70</span>  <span class="comment">// Rotate with q * p * conjugate(q), avoiding temporary tf2 objects.</span></div>
+<div class="line"><span class="lineno">   71</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> tx = 2.0F * (qy * z - qz * y);</div>
+<div class="line"><span class="lineno">   72</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> ty = 2.0F * (qz * x - qx * z);</div>
+<div class="line"><span class="lineno">   73</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> tz = 2.0F * (qx * y - qy * x);</div>
+<div class="line"><span class="lineno">   74</span>  transformed_x =</div>
+<div class="line"><span class="lineno">   75</span>      x + qw * tx + (qy * tz - qz * ty) + inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">start_translation</a>[0] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">end_translation</a>[0];</div>
+<div class="line"><span class="lineno">   76</span>  transformed_y =</div>
+<div class="line"><span class="lineno">   77</span>      y + qw * ty + (qz * tx - qx * tz) + inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">start_translation</a>[1] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">end_translation</a>[1];</div>
+<div class="line"><span class="lineno">   78</span>  transformed_z =</div>
+<div class="line"><span class="lineno">   79</span>      z + qw * tz + (qx * ty - qy * tx) + inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">start_translation</a>[2] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">end_translation</a>[2];</div>
+<div class="line"><span class="lineno">   80</span>}</div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a130fdb0134186c90ccb8823817124463"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a130fdb0134186c90ccb8823817124463">point_cloud_fusion::MotionTransform::max_time_offset</a></div><div class="ttdeci">uint32_t max_time_offset</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00025">motion_compensation.hpp:25</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a1cbee2dbcc3b587625b2734b242ba76f"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">point_cloud_fusion::MotionTransform::start_quaternion</a></div><div class="ttdeci">std::array&lt; float, 4 &gt; start_quaternion</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00023">motion_compensation.hpp:23</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a40418be8c90426aae1d81e956f33b2af"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">point_cloud_fusion::MotionTransform::end_quaternion</a></div><div class="ttdeci">std::array&lt; float, 4 &gt; end_quaternion</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00024">motion_compensation.hpp:24</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a4beba3c92c63c9905e2f16449286c8a9"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">point_cloud_fusion::MotionTransform::end_translation</a></div><div class="ttdeci">std::array&lt; float, 3 &gt; end_translation</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00022">motion_compensation.hpp:22</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a782ca63f8ac71d6f78005ea9bfc36712"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">point_cloud_fusion::MotionTransform::start_translation</a></div><div class="ttdeci">std::array&lt; float, 3 &gt; start_translation</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00021">motion_compensation.hpp:21</a></div></div>
+</div><!-- fragment -->
+</div>
+</div>
 <h2 class="groupheader">Variable Documentation</h2>
 <a id="a358b566c0327fab9f92f072b3a10e865" name="a358b566c0327fab9f92f072b3a10e865"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a358b566c0327fab9f92f072b3a10e865">&#9670;&#160;</a></span>is_vector_v</h2>
@@ -149,7 +302,7 @@ template&lt;typename C &gt; </div>
 </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="point__cloud__fusion_8hpp_source.html#l00040">40</a> of file <a class="el" href="point__cloud__fusion_8hpp_source.html">point_cloud_fusion.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="point__cloud__fusion_8hpp_source.html#l00043">43</a> of file <a class="el" href="point__cloud__fusion_8hpp_source.html">point_cloud_fusion.hpp</a>.</p>
 
 </div>
 </div>

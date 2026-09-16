@@ -14,6 +14,7 @@ var annotated_dup =
       ] ],
       [ "is_vector", "structpoint__cloud__fusion_1_1is__vector.html", null ],
       [ "is_vector< std::vector< T, A > >", "structpoint__cloud__fusion_1_1is__vector_3_01std_1_1vector_3_01T_00_01A_01_4_01_4.html", null ],
+      [ "MotionTransform", "structpoint__cloud__fusion_1_1MotionTransform.html", "structpoint__cloud__fusion_1_1MotionTransform" ],
       [ "PointCloudFusion", "classpoint__cloud__fusion_1_1PointCloudFusion.html", "classpoint__cloud__fusion_1_1PointCloudFusion" ]
     ] ]
 ];

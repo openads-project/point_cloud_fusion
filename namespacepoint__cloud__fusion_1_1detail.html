@@ -28,7 +28,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">point_cloud_fusion<span id="projectnumber">&#160;v1.4.0</span>
+   <div id="projectname">point_cloud_fusion<span id="projectnumber">&#160;v1.5.0</span>
    </div>
   </td>
  </tr>
@@ -161,7 +161,7 @@ template&lt;std::size_t N&gt; </div>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="point__cloud__fusion_8cpp_source.html#l00573">573</a> of file <a class="el" href="point__cloud__fusion_8cpp_source.html">point_cloud_fusion.cpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="point__cloud__fusion_8cpp_source.html#l00619">619</a> of file <a class="el" href="point__cloud__fusion_8cpp_source.html">point_cloud_fusion.cpp</a>.</p>
 
 </div>
 </div>
@@ -179,7 +179,7 @@ template&lt;std::size_t N&gt; </div>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="point__cloud__fusion_8cpp_source.html#l00576">576</a> of file <a class="el" href="point__cloud__fusion_8cpp_source.html">point_cloud_fusion.cpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="point__cloud__fusion_8cpp_source.html#l00622">622</a> of file <a class="el" href="point__cloud__fusion_8cpp_source.html">point_cloud_fusion.cpp</a>.</p>
 
 </div>
 </div>
@@ -220,10 +220,10 @@ template&lt;std::size_t N&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="point__cloud__fusion_8cpp_source.html#l00603">603</a> of file <a class="el" href="point__cloud__fusion_8cpp_source.html">point_cloud_fusion.cpp</a>.</p>
-<div class="fragment"><div class="line"><span class="lineno">  603</span>                                                                                                                   {</div>
-<div class="line"><span class="lineno">  604</span>  connectInputsImpl&lt;N&gt;(sync, subs, std::make_index_sequence&lt;N&gt;{});</div>
-<div class="line"><span class="lineno">  605</span>}</div>
+<p class="definition">Definition at line <a class="el" href="point__cloud__fusion_8cpp_source.html#l00649">649</a> of file <a class="el" href="point__cloud__fusion_8cpp_source.html">point_cloud_fusion.cpp</a>.</p>
+<div class="fragment"><div class="line"><span class="lineno">  649</span>                                                                                                                   {</div>
+<div class="line"><span class="lineno">  650</span>  connectInputsImpl&lt;N&gt;(sync, subs, std::make_index_sequence&lt;N&gt;{});</div>
+<div class="line"><span class="lineno">  651</span>}</div>
 </div><!-- fragment -->
 </div>
 </div>
@@ -269,11 +269,11 @@ template&lt;std::size_t N, std::size_t... Is&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="point__cloud__fusion_8cpp_source.html#l00588">588</a> of file <a class="el" href="point__cloud__fusion_8cpp_source.html">point_cloud_fusion.cpp</a>.</p>
-<div class="fragment"><div class="line"><span class="lineno">  590</span>                                                   {</div>
-<div class="line"><span class="lineno">  591</span>  <span class="comment">// Fan the subscriber filters into the synchronizer inputs.</span></div>
-<div class="line"><span class="lineno">  592</span>  sync.connectInput(*subs[Is]...);</div>
-<div class="line"><span class="lineno">  593</span>}</div>
+<p class="definition">Definition at line <a class="el" href="point__cloud__fusion_8cpp_source.html#l00634">634</a> of file <a class="el" href="point__cloud__fusion_8cpp_source.html">point_cloud_fusion.cpp</a>.</p>
+<div class="fragment"><div class="line"><span class="lineno">  636</span>                                                   {</div>
+<div class="line"><span class="lineno">  637</span>  <span class="comment">// Fan the subscriber filters into the synchronizer inputs.</span></div>
+<div class="line"><span class="lineno">  638</span>  sync.connectInput(*subs[Is]...);</div>
+<div class="line"><span class="lineno">  639</span>}</div>
 </div><!-- fragment -->
 </div>
 </div>

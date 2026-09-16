@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['pointcloudfusion_0',['PointCloudFusion',['../classpoint__cloud__fusion_1_1PointCloudFusion.html',1,'point_cloud_fusion']]]
+  ['motiontransform_0',['MotionTransform',['../structpoint__cloud__fusion_1_1MotionTransform.html',1,'point_cloud_fusion']]]
 ];

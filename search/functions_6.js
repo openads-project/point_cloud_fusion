@@ -1,5 +1,6 @@
 var searchData=
 [
-  ['validateinputtopicsparameter_0',['validateInputTopicsParameter',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a0e1de8da502ea004fc17fb3be91cb137',1,'point_cloud_fusion::PointCloudFusion']]],
-  ['validaterangelimits_1',['validateRangeLimits',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a2d9f23d9ac86afa8133ffd7ecc4e0e59',1,'point_cloud_fusion::PointCloudFusion']]]
+  ['selectmotioncompatibleclouds_0',['selectMotionCompatibleClouds',['../namespacepoint__cloud__fusion.html#a68d769c8ce8a72e528d1ac3945a091f0',1,'point_cloud_fusion']]],
+  ['setup_1',['setup',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a5cb88f9bba2605a6d75016950305e046',1,'point_cloud_fusion::PointCloudFusion']]],
+  ['setupsynchronizer_2',['setupSynchronizer',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#abcd7c22ba8807e12987372fd72f7425a',1,'point_cloud_fusion::PointCloudFusion']]]
 ];

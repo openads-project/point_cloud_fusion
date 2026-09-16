@@ -1,5 +1,8 @@
 var searchData=
 [
-  ['setup_0',['setup',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a5cb88f9bba2605a6d75016950305e046',1,'point_cloud_fusion::PointCloudFusion']]],
-  ['setupsynchronizer_1',['setupSynchronizer',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#abcd7c22ba8807e12987372fd72f7425a',1,'point_cloud_fusion::PointCloudFusion']]]
+  ['parameterscallback_0',['parametersCallback',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a81abd0ed2f7af4c56ec5f0d5cc80752b',1,'point_cloud_fusion::PointCloudFusion']]],
+  ['pointcloudfusion_1',['PointCloudFusion',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#af6c10b72c46b43e736ffb681c975ce61',1,'point_cloud_fusion::PointCloudFusion']]],
+  ['preparebatchmotiontransforms_2',['prepareBatchMotionTransforms',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#aa192aeade9a49b9c8526c2c04ccf5a2e',1,'point_cloud_fusion::PointCloudFusion']]],
+  ['preparemotiontransform_3',['prepareMotionTransform',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#ae46fff7768408f5de688711684ab0ec3',1,'point_cloud_fusion::PointCloudFusion']]],
+  ['publishfusedcloud_4',['publishFusedCloud',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#ab45e88d5879e6b4eb58525d436533036',1,'point_cloud_fusion::PointCloudFusion']]]
 ];

@@ -4,6 +4,7 @@ var hierarchy =
       [ "point_cloud_fusion::is_vector< C >", "structpoint__cloud__fusion_1_1is__vector.html", null ]
     ] ],
     [ "point_cloud_fusion::PointCloudFusion::FusionTiming", "structpoint__cloud__fusion_1_1PointCloudFusion_1_1FusionTiming.html", null ],
+    [ "point_cloud_fusion::MotionTransform", "structpoint__cloud__fusion_1_1MotionTransform.html", null ],
     [ "rclcpp::Node", null, [
       [ "point_cloud_fusion::PointCloudFusion", "classpoint__cloud__fusion_1_1PointCloudFusion.html", null ]
     ] ],
