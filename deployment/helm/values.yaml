@@ -1,6 +1,6 @@
 openadservice:
   name: point-cloud-fusion
-  image: ghcr.io/openads-project/point_cloud_fusion:v1.4.0
+  image: ghcr.io/openads-project/point_cloud_fusion:v1.5.0
   env:
     # --- name ------
     NAMESPACE: /
