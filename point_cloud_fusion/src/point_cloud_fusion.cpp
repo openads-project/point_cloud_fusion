@@ -311,14 +311,16 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
   this->declareAndLoadParameter(
       "feature_calibration.enable",
       feature_calibration_enable_,                                               // name
-      "Continuously align one scalar feature across configured inputs",          // description
+      "Continuously map follower feature distributions to the pooled, unchanged "
+      "leader distribution",                                                     // description
       false,                                                                     // add_to_auto_reconfigurable_params
       false,                                                                     // is_required
       true);                                                                     // read_only
   this->declareAndLoadParameter(
       "feature_calibration.mode",
       feature_calibration_mode_,                                                 // name
-      "Feature-calibration algorithm",                                           // description
+      "Calibration algorithm; currently only continuous distribution mapping is "
+      "supported",                                                               // description
       false,                                                                     // add_to_auto_reconfigurable_params
       false,                                                                     // is_required
       true,                                                                      // read_only
@@ -327,30 +329,29 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
   this->declareAndLoadParameter(
       "feature_calibration.field",
       feature_calibration_field_,                                                // name
-      "Scalar point field calibrated by distribution matching",                  // description
+      "Scalar field to calibrate, typically reflectivity or intensity",          // description
       false,                                                                     // add_to_auto_reconfigurable_params
       false,                                                                     // is_required
       true);                                                                     // read_only
   this->declareAndLoadParameter(
       "feature_calibration.leading_inputs",
       feature_calibration_leading_inputs_,                                       // name
-      "Input topics whose pooled feature distribution is the unchanged "
-      "reference",                                                               // description
+      "Input topics that form the unchanged reference distribution",             // description
       false,                                                                     // add_to_auto_reconfigurable_params
       false,                                                                     // is_required
       true);                                                                     // read_only
   this->declareAndLoadParameter(
       "feature_calibration.follower_inputs",
       feature_calibration_follower_inputs_,                                      // name
-      "Input topics whose feature values are mapped to the leading "
-      "distribution",                                                            // description
+      "Input topics whose values are remapped to the reference distribution",    // description
       false,                                                                     // add_to_auto_reconfigurable_params
       false,                                                                     // is_required
       true);                                                                     // read_only
   this->declareAndLoadParameter(
       "feature_calibration.samples_per_cloud",
       feature_calibration_samples_per_cloud_,                                    // name
-      "Maximum evenly spaced samples collected from each input cloud",           // description
+      "Maximum rotating stratified samples collected per selected cloud by the "
+      "asynchronous worker",                                                     // description
       false,                                                                     // add_to_auto_reconfigurable_params
       false,                                                                     // is_required
       true,                                                                      // read_only
@@ -360,7 +361,7 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
   this->declareAndLoadParameter(
       "feature_calibration.window_samples",
       feature_calibration_window_samples_,                                       // name
-      "Rolling sample capacity per input",                                       // description
+      "Rolling sample capacity maintained separately for each selected input",   // description
       false,                                                                     // add_to_auto_reconfigurable_params
       false,                                                                     // is_required
       true,                                                                      // read_only
@@ -370,7 +371,8 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
   this->declareAndLoadParameter(
       "feature_calibration.minimum_samples",
       feature_calibration_minimum_samples_,                                      // name
-      "Samples required before publishing a new mapping",                        // description
+      "Samples required for a leader pool and follower before calibration "
+      "activates",                                                               // description
       false,                                                                     // add_to_auto_reconfigurable_params
       false,                                                                     // is_required
       true,                                                                      // read_only
@@ -380,7 +382,8 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
   this->declareAndLoadParameter(
       "feature_calibration.quantiles",
       feature_calibration_quantiles_,                                            // name
-      "Number of piecewise-linear quantile intervals",                           // description
+      "Number of tail-dense piecewise-linear quantile intervals used by the "
+      "distribution mapping",                                                    // description
       false,                                                                     // add_to_auto_reconfigurable_params
       false,                                                                     // is_required
       true,                                                                      // read_only
@@ -390,7 +393,7 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
   this->declareAndLoadParameter(
       "feature_calibration.update_interval_sec",
       feature_calibration_update_interval_sec_,                                  // name
-      "Minimum interval between asynchronous mapping updates",                   // description
+      "Minimum interval between continuous background mapping updates",          // description
       false,                                                                     // add_to_auto_reconfigurable_params
       false,                                                                     // is_required
       true,                                                                      // read_only

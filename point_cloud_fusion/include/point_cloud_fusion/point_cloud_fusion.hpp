@@ -54,10 +54,20 @@ class PointCloudFusion : public rclcpp::Node {
    * @param options node options
    */
   explicit PointCloudFusion(const rclcpp::NodeOptions& options);
+
+  /** @brief Stop background workers before destroying node resources. */
   ~PointCloudFusion() override;
+
+  /** @brief Fusion nodes cannot be copied. */
   PointCloudFusion(const PointCloudFusion&) = delete;
+
+  /** @brief Fusion nodes cannot be copy-assigned. */
   PointCloudFusion& operator=(const PointCloudFusion&) = delete;
+
+  /** @brief Fusion nodes cannot be moved. */
   PointCloudFusion(PointCloudFusion&&) = delete;
+
+  /** @brief Fusion nodes cannot be move-assigned. */
   PointCloudFusion& operator=(PointCloudFusion&&) = delete;
 
  private:
@@ -229,6 +239,8 @@ class PointCloudFusion : public rclcpp::Node {
    * invalid.
    */
   void validateRangeLimits();
+
+  /** @brief Validate calibration parameters and start the background calibrator. */
   void configureFeatureCalibration();
 
   static constexpr int32_t kMinSyncQueueSize = 1;
@@ -282,16 +294,16 @@ class PointCloudFusion : public rclcpp::Node {
   std::vector<std::string> output_fields_;
   std::vector<std::string> input_topics_;
   std::vector<std::string> input_transport_hints_;
-  bool feature_calibration_enable_{false};
-  std::string feature_calibration_mode_{"distribution"};
-  std::string feature_calibration_field_{"reflectivity"};
+  bool feature_calibration_enable_ = false;
+  std::string feature_calibration_mode_ = "distribution";
+  std::string feature_calibration_field_ = "reflectivity";
   std::vector<std::string> feature_calibration_leading_inputs_;
   std::vector<std::string> feature_calibration_follower_inputs_;
-  int64_t feature_calibration_samples_per_cloud_{2048};
-  int64_t feature_calibration_window_samples_{100000};
-  int64_t feature_calibration_minimum_samples_{20000};
-  int64_t feature_calibration_quantiles_{64};
-  double feature_calibration_update_interval_sec_{3.0};
+  int64_t feature_calibration_samples_per_cloud_ = 2048;
+  int64_t feature_calibration_window_samples_ = 100000;
+  int64_t feature_calibration_minimum_samples_ = 20000;
+  int64_t feature_calibration_quantiles_ = 64;
+  double feature_calibration_update_interval_sec_ = 3.0;
   std::unique_ptr<DistributionFeatureCalibrator> feature_calibrator_;
 
   /**
