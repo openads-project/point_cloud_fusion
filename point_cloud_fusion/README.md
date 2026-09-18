@@ -58,6 +58,16 @@ flowchart LR
 | `range_limits.z_max` | `float` | `20.0` | Maximum z coordinate in target_frame to keep [m] |
 | `max_time_diff_sec` | `float` | `0.05` | Maximum timestamp spread across a synchronized input batch in seconds |
 | `age_penalty` | `float` | `0.1` | Age penalty used by the approximate-time synchronizer |
+| `feature_calibration.enable` | `bool` | `false` | Continuously map follower feature distributions to the pooled, unchanged leader distribution |
+| `feature_calibration.mode` | `string` | `"distribution"` | Calibration algorithm; currently only continuous distribution mapping is supported |
+| `feature_calibration.field` | `string` | `"reflectivity"` | Scalar field to calibrate, typically reflectivity or intensity |
+| `feature_calibration.leading_inputs` | `string[]` | `[]` | Input topics that form the unchanged reference distribution |
+| `feature_calibration.follower_inputs` | `string[]` | `[]` | Input topics whose values are remapped to the reference distribution |
+| `feature_calibration.samples_per_cloud` | `int` | `2048` | Maximum rotating stratified samples collected per selected cloud by the asynchronous worker |
+| `feature_calibration.window_samples` | `int` | `100000` | Rolling sample capacity maintained separately for each selected input |
+| `feature_calibration.minimum_samples` | `int` | `20000` | Samples required for a leader pool and follower before calibration activates |
+| `feature_calibration.quantiles` | `int` | `64` | Number of tail-dense piecewise-linear quantile intervals used by the distribution mapping |
+| `feature_calibration.update_interval_sec` | `float` | `3.0` | Minimum interval between continuous background mapping updates |
 
 ## Launch Files
 

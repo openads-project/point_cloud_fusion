@@ -17,6 +17,7 @@
 #include <utility>
 
 #include <point_cloud_fusion/point_cloud_fusion.hpp>
+#include <point_cloud_fusion/point_cloud_layout.hpp>
 
 #include <tf2/LinearMath/Transform.h>
 #include <tf2/time.h>
@@ -29,26 +30,6 @@
 RCLCPP_COMPONENTS_REGISTER_NODE(point_cloud_fusion::PointCloudFusion)
 
 namespace {
-
-inline std::size_t pointFieldDatatypeSize(uint8_t datatype) {
-  using sensor_msgs::msg::PointField;
-  switch (datatype) {
-    case PointField::INT8:
-    case PointField::UINT8:
-      return 1;
-    case PointField::INT16:
-    case PointField::UINT16:
-      return 2;
-    case PointField::INT32:
-    case PointField::UINT32:
-    case PointField::FLOAT32:
-      return 4;
-    case PointField::FLOAT64:
-      return 8;
-    default:
-      return 0;
-  }
-}
 
 /**
  * @brief Check whether a point lies inside the configured inclusive XYZ bounds.
@@ -99,6 +80,24 @@ inline uint32_t loadUint32(const uint8_t* data, std::size_t offset) {
   uint32_t value = 0;
   std::memcpy(&value, byteOffset(data, offset), sizeof(value));
   return value;
+}
+
+inline void storeUint32(uint8_t* data, std::size_t offset, uint32_t value) {
+  std::memcpy(byteOffset(data, offset), &value, sizeof(value));
+}
+
+inline int64_t stampDeltaInTimeUnits(const builtin_interfaces::msg::Time& input_stamp,
+                                     const rclcpp::Time& output_stamp,
+                                     double time_scale_sec) {
+  return std::llround((rclcpp::Time(input_stamp) - output_stamp).seconds() / time_scale_sec);
+}
+
+inline uint32_t rebasedTimeOffset(uint32_t input_offset,
+                                  const builtin_interfaces::msg::Time& input_stamp,
+                                  const rclcpp::Time& output_stamp,
+                                  double time_scale_sec) {
+  const int64_t rebased = stampDeltaInTimeUnits(input_stamp, output_stamp, time_scale_sec) + static_cast<int64_t>(input_offset);
+  return static_cast<uint32_t>(std::clamp<int64_t>(rebased, 0, std::numeric_limits<uint32_t>::max()));
 }
 
 /**
@@ -309,7 +308,99 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 100.0,                                           // to_value
                                 std::nullopt,                                    // step_value
                                 "Valid range is [0, 100].");                     // additional_constraints
+  this->declareAndLoadParameter(
+      "feature_calibration.enable",
+      feature_calibration_enable_,                                               // name
+      "Continuously map follower feature distributions to the pooled, unchanged "
+      "leader distribution",                                                     // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true);                                                                     // read_only
+  this->declareAndLoadParameter(
+      "feature_calibration.mode",
+      feature_calibration_mode_,                                                 // name
+      "Calibration algorithm; currently only continuous distribution mapping is "
+      "supported",                                                               // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true,                                                                      // read_only
+      std::nullopt, std::nullopt, std::nullopt,                                  // from_value, to_value, step_value
+      "Currently supported value: distribution");                                // additional_constraints
+  this->declareAndLoadParameter(
+      "feature_calibration.field",
+      feature_calibration_field_,                                                // name
+      "Scalar field to calibrate, typically reflectivity or intensity",          // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true);                                                                     // read_only
+  this->declareAndLoadParameter(
+      "feature_calibration.leading_inputs",
+      feature_calibration_leading_inputs_,                                       // name
+      "Input topics that form the unchanged reference distribution",             // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true);                                                                     // read_only
+  this->declareAndLoadParameter(
+      "feature_calibration.follower_inputs",
+      feature_calibration_follower_inputs_,                                      // name
+      "Input topics whose values are remapped to the reference distribution",    // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true);                                                                     // read_only
+  this->declareAndLoadParameter(
+      "feature_calibration.samples_per_cloud",
+      feature_calibration_samples_per_cloud_,                                    // name
+      "Maximum rotating stratified samples collected per selected cloud by the "
+      "asynchronous worker",                                                     // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true,                                                                      // read_only
+      1,                                                                         // from_value
+      100000,                                                                    // to_value
+      1);                                                                        // step_value
+  this->declareAndLoadParameter(
+      "feature_calibration.window_samples",
+      feature_calibration_window_samples_,                                       // name
+      "Rolling sample capacity maintained separately for each selected input",   // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true,                                                                      // read_only
+      100,                                                                       // from_value
+      10000000,                                                                  // to_value
+      1);                                                                        // step_value
+  this->declareAndLoadParameter(
+      "feature_calibration.minimum_samples",
+      feature_calibration_minimum_samples_,                                      // name
+      "Samples required for a leader pool and follower before calibration "
+      "activates",                                                               // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true,                                                                      // read_only
+      100,                                                                       // from_value
+      10000000,                                                                  // to_value
+      1);                                                                        // step_value
+  this->declareAndLoadParameter(
+      "feature_calibration.quantiles",
+      feature_calibration_quantiles_,                                            // name
+      "Number of tail-dense piecewise-linear quantile intervals used by the "
+      "distribution mapping",                                                    // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true,                                                                      // read_only
+      2,                                                                         // from_value
+      64,                                                                        // to_value
+      1);                                                                        // step_value
+  this->declareAndLoadParameter(
+      "feature_calibration.update_interval_sec",
+      feature_calibration_update_interval_sec_,                                  // name
+      "Minimum interval between continuous background mapping updates",          // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true,                                                                      // read_only
+      0.1,                                                                       // from_value
+      3600.0);                                                                   // to_value
   configureOutputStampMode(output_stamp_mode_param_);
+  configureFeatureCalibration();
 
 #ifdef ENABLE_CUDA
   // Keep the CUDA context available even when starting in CPU mode so the
@@ -341,6 +432,8 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
   });
 }
 // clang-format on
+
+PointCloudFusion::~PointCloudFusion() { feature_calibrator_.reset(); }
 
 template <typename T>
 void PointCloudFusion::declareAndLoadParameter(const std::string& name,
@@ -687,7 +780,11 @@ void PointCloudFusion::setup() {
     subscription_options.callback_group = callback_group;
 
     auto subscriber = std::make_shared<point_cloud_transport::SubscriberFilter>();
-    subscriber->subscribe(this->shared_from_this(), resolved, hint, rmw_qos_profile_default, subscription_options);
+    // Point clouds are sensor data and are commonly published best-effort to
+    // avoid back-pressure on high-bandwidth streams. A best-effort subscriber
+    // remains compatible with reliable publishers, so it also supports mixed
+    // sensor setups (for example, best-effort Aeva and reliable Ouster).
+    subscriber->subscribe(this->shared_from_this(), resolved, hint, rmw_qos_profile_sensor_data, subscription_options);
     RCLCPP_INFO(this->get_logger(), "Subscribed to '%s' (hint=%s)", subscriber->getTopic().c_str(), hint.c_str());
     cloud_subscriber_callback_groups_.push_back(std::move(callback_group));
     cloud_subscribers_.push_back(std::move(subscriber));
@@ -815,6 +912,8 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
   if (msgs.empty()) {
     return;
   }
+
+  if (feature_calibrator_) feature_calibrator_->enqueue(msgs);
 
   // Protect runtime-configurable parameter reads against concurrent parameter
   // updates.
@@ -1003,7 +1102,7 @@ bool PointCloudFusion::prepareMotionTransform(const PointCloudMsg& msg,
 
 bool PointCloudFusion::prepareBatchMotionTransforms(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
                                                     const rclcpp::Time& reference_stamp,
-                                                    int time_field_offset,
+                                                    const std::vector<int>& time_field_offsets,
                                                     std::vector<MotionTransform>& transforms) const {
   transforms.clear();
   transforms.resize(msgs.size());
@@ -1011,15 +1110,25 @@ bool PointCloudFusion::prepareBatchMotionTransforms(const std::vector<PointCloud
     return false;
   }
 
+  if (time_field_offsets.size() != msgs.size() ||
+      std::any_of(time_field_offsets.begin(), time_field_offsets.end(), [](int offset) { return offset == -1; })) {
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                         "Motion compensation requested, but at least one "
+                         "input lacks a valid UINT32 '%s' field; "
+                         "using rigid transforms for this heterogeneous batch",
+                         motion_compensation_time_field_.c_str());
+    return false;
+  }
+
   const bool recovery_probe = !motion_tf_available_.load(std::memory_order_relaxed);
   const double timeout_sec = recovery_probe ? 0.0 : motion_compensation_tf_timeout_sec_;
   bool prepared_any = false;
   for (std::size_t i = 0; i < msgs.size(); ++i) {
-    if (!msgs[i]) {
+    if (!msgs[i] || time_field_offsets[i] == -2) {
       continue;
     }
     prepared_any = true;
-    if (!prepareMotionTransform(*msgs[i], reference_stamp, time_field_offset, timeout_sec, transforms[i])) {
+    if (!prepareMotionTransform(*msgs[i], reference_stamp, time_field_offsets[i], timeout_sec, transforms[i])) {
       motion_tf_available_.store(false, std::memory_order_relaxed);
       return false;
     }
@@ -1035,339 +1144,200 @@ bool PointCloudFusion::prepareBatchMotionTransforms(const std::vector<PointCloud
 
 PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch(
     const std::vector<PointCloudMsg::ConstSharedPtr>& msgs, const FusionTiming& timing, std::size_t& valid_point_count) const {
-  if (msgs.empty()) {
+  valid_point_count = 0;
+  if (msgs.empty()) return nullptr;
+
+  const detail::BatchLayout layout = detail::buildBatchLayout(msgs, output_fields_, motion_compensation_time_field_);
+  if (layout.point_step == 0) {
+    missing_xyz_count_.fetch_add(msgs.size(), std::memory_order_relaxed);
+    RCLCPP_WARN(this->get_logger(), "No input cloud has valid FLOAT32 x/y/z fields; skipping batch");
     return nullptr;
   }
 
-  const auto& input0_msg = msgs.front();
-  if (!input0_msg) {
-    return nullptr;
+  if (!layout.conflicting_fields.empty()) {
+    incompatible_field_count_.fetch_add(layout.conflicting_fields.size(), std::memory_order_relaxed);
+    std::ostringstream names;
+    for (std::size_t i = 0; i < layout.conflicting_fields.size(); ++i) {
+      if (i != 0U) names << ", ";
+      names << layout.conflicting_fields[i];
+    }
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                         "Omitting same-name fields with incompatible datatype/count: %s", names.str().c_str());
   }
 
-  std::optional<uint32_t> x_offset;
-  std::optional<uint32_t> y_offset;
-  std::optional<uint32_t> z_offset;
-  int time_offset = -1;
-  for (const auto& field : input0_msg->fields) {
-    if (field.name == "x") {
-      x_offset = field.offset;
-    } else if (field.name == "y") {
-      y_offset = field.offset;
-    } else if (field.name == "z") {
-      z_offset = field.offset;
-    } else if (field.name == motion_compensation_time_field_ && field.datatype == sensor_msgs::msg::PointField::UINT32 &&
-               field.count == 1) {
-      time_offset = static_cast<int>(field.offset);
+  std::size_t max_capacity = 0;
+  std::vector<int> time_offsets(msgs.size(), -2);
+  for (std::size_t i = 0; i < msgs.size(); ++i) {
+    if (!layout.inputs[i].valid || !msgs[i]) {
+      if (msgs[i]) {
+        missing_xyz_count_.fetch_add(1, std::memory_order_relaxed);
+        skipped_cloud_count_.fetch_add(1, std::memory_order_relaxed);
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                             "Skipping cloud from '%s': %s (missing_xyz_total=%llu, "
+                             "skipped_total=%llu)",
+                             msgs[i]->header.frame_id.c_str(), layout.inputs[i].rejection_reason.c_str(),
+                             static_cast<unsigned long long>(missing_xyz_count_.load()),
+                             static_cast<unsigned long long>(skipped_cloud_count_.load()));
+      }
+      continue;
+    }
+    time_offsets[i] = layout.inputs[i].time_offset;
+    std::size_t count = static_cast<std::size_t>(msgs[i]->width) * msgs[i]->height;
+    count = std::min(count, msgs[i]->point_step == 0 ? std::size_t{0} : msgs[i]->data.size() / msgs[i]->point_step);
+    if (fixed_points_per_input_cloud_ > 0) {
+      count = std::min(count, static_cast<std::size_t>(fixed_points_per_input_cloud_));
+    }
+    max_capacity += count;
+    if (!layout.inputs[i].zero_filled_fields.empty()) {
+      zero_filled_field_count_.fetch_add(layout.inputs[i].zero_filled_fields.size(), std::memory_order_relaxed);
+      RCLCPP_DEBUG(this->get_logger(), "Cloud from '%s' zero-fills %zu output fields (total=%llu)",
+                   msgs[i]->header.frame_id.c_str(), layout.inputs[i].zero_filled_fields.size(),
+                   static_cast<unsigned long long>(zero_filled_field_count_.load()));
     }
   }
+  if (max_capacity == 0) return nullptr;
 
-  if (!x_offset || !y_offset || !z_offset) {
-    RCLCPP_WARN(this->get_logger(), "Point cloud lacks x/y/z fields; skipping fusion for this batch.");
-    valid_point_count = 0;
-    return nullptr;
-  }
-
-  const size_t point_step = input0_msg->point_step;
-  const auto& input0_fields = input0_msg->fields;
-  const bool is_bigendian = input0_msg->is_bigendian;
-
-  struct FieldCopyPlan {
-    const sensor_msgs::msg::PointField* source;
-    sensor_msgs::msg::PointField destination;
-    std::size_t byte_length;
-  };
-
-  bool use_all_fields = output_fields_.empty();
-  std::vector<FieldCopyPlan> copy_plan;
-  std::vector<sensor_msgs::msg::PointField> fused_fields;
-  fused_fields.reserve(input0_fields.size());
-
-  std::size_t fused_point_step = point_step;
-  std::optional<uint32_t> fused_x_offset = x_offset;
-  std::optional<uint32_t> fused_y_offset = y_offset;
-  std::optional<uint32_t> fused_z_offset = z_offset;
-
-  if (!use_all_fields) {
-    fused_x_offset.reset();
-    fused_y_offset.reset();
-    fused_z_offset.reset();
-    bool selection_valid = true;
-    fused_point_step = 0;
-    fused_fields.clear();
-    copy_plan.reserve(output_fields_.size());
-
-    for (const auto& requested_name : output_fields_) {
-      auto iter =
-          std::find_if(input0_fields.begin(), input0_fields.end(),
-                       [&requested_name](const sensor_msgs::msg::PointField& field) { return field.name == requested_name; });
-      if (iter == input0_fields.end()) {
-        RCLCPP_WARN(this->get_logger(),
-                    "Requested output field '%s' not present in incoming point "
-                    "cloud; publishing full field set instead.",
-                    requested_name.c_str());
-        selection_valid = false;
-        break;
-      }
-
-      const std::size_t datatype_size = pointFieldDatatypeSize(iter->datatype);
-      if (datatype_size == 0) {
-        RCLCPP_WARN(this->get_logger(),
-                    "Point field '%s' uses unsupported datatype %u; publishing "
-                    "full field set instead.",
-                    requested_name.c_str(), static_cast<unsigned int>(iter->datatype));
-        selection_valid = false;
-        break;
-      }
-
-      FieldCopyPlan plan;
-      plan.source = &(*iter);
-      plan.destination = *iter;
-      plan.destination.offset = static_cast<uint32_t>(fused_point_step);
-      plan.byte_length = datatype_size * static_cast<std::size_t>(iter->count);
-      fused_point_step += plan.byte_length;
-
-      if (requested_name == "x") {
-        fused_x_offset = plan.destination.offset;
-      } else if (requested_name == "y") {
-        fused_y_offset = plan.destination.offset;
-      } else if (requested_name == "z") {
-        fused_z_offset = plan.destination.offset;
-      }
-
-      copy_plan.push_back(plan);
-      fused_fields.push_back(plan.destination);
-    }
-
-    if (!selection_valid || !fused_x_offset || !fused_y_offset || !fused_z_offset) {
-      if (selection_valid) {
-        RCLCPP_ERROR(this->get_logger(),
-                     "Output field selection must include x, y, and z; "
-                     "publishing full field set instead.");
-      }
-      use_all_fields = true;
-      copy_plan.clear();
-      fused_point_step = point_step;
-      fused_fields.assign(input0_fields.begin(), input0_fields.end());
-      fused_x_offset = x_offset;
-      fused_y_offset = y_offset;
-      fused_z_offset = z_offset;
-    }
-  }
-
-  if (use_all_fields) {
-    fused_fields.assign(input0_fields.begin(), input0_fields.end());
-    fused_point_step = point_step;
-    fused_x_offset = x_offset;
-    fused_y_offset = y_offset;
-    fused_z_offset = z_offset;
-  }
-
-  // Reserve enough space once so the fusion loop only appends into a pre-sized
-  // buffer.
-  const size_t max_capacity = std::accumulate(
-      msgs.begin(), msgs.end(), static_cast<size_t>(0), [this](size_t sum, const PointCloudMsg::ConstSharedPtr& cloud) {
-        if (!cloud) {
-          return sum;
-        }
-        size_t cloud_size = static_cast<size_t>(cloud->width) * static_cast<size_t>(cloud->height);
-        // If user set a cap, limit each cloud to that size
-        if (fixed_points_per_input_cloud_ > 0) {
-          cloud_size = std::min(cloud_size, static_cast<size_t>(fixed_points_per_input_cloud_));
-        }
-        return sum + cloud_size;
-      });
-
-  if (max_capacity == 0) {
-    valid_point_count = 0;
-    return nullptr;
-  }
+  const auto calibration_mappings =
+      feature_calibrator_ ? feature_calibrator_->mappings() : std::vector<std::shared_ptr<const FeatureMapping>>(msgs.size());
+  const auto output_calibration_field = std::find_if(layout.fields.begin(), layout.fields.end(), [this](const auto& field) {
+    return field.name == feature_calibration_field_ && field.count == 1;
+  });
 
   auto output = std::make_unique<PointCloudMsg>();
   output->header.frame_id = target_frame_;
   const rclcpp::Time chosen_stamp = outputStamp(timing);
   output->header.stamp = chosen_stamp;
   output->height = 1;
-  output->is_bigendian = is_bigendian;
-  output->point_step = fused_point_step;
-  output->fields = fused_fields;
+  output->is_bigendian = layout.is_bigendian;
+  output->point_step = layout.point_step;
+  output->fields = layout.fields;
   output->is_dense = true;
-  output->data.resize(max_capacity * fused_point_step);
+  output->data.resize(max_capacity * layout.point_step);
 
-  uint8_t* dest_ptr = output->data.data();
-  valid_point_count = 0;
-  std::size_t skipped_inputs = 0;
-
-  // Pre-cache range limits as float to avoid per-point double→float conversion.
   const bool check_range = range_limits_enable_;
-  const float rl_x_min = static_cast<float>(range_limits_x_min_);
-  const float rl_x_max = static_cast<float>(range_limits_x_max_);
-  const float rl_y_min = static_cast<float>(range_limits_y_min_);
-  const float rl_y_max = static_cast<float>(range_limits_y_max_);
-  const float rl_z_min = static_cast<float>(range_limits_z_min_);
-  const float rl_z_max = static_cast<float>(range_limits_z_max_);
+  const float x_min = static_cast<float>(range_limits_x_min_);
+  const float x_max = static_cast<float>(range_limits_x_max_);
+  const float y_min = static_cast<float>(range_limits_y_min_);
+  const float y_max = static_cast<float>(range_limits_y_max_);
+  const float z_min = static_cast<float>(range_limits_z_min_);
+  const float z_max = static_cast<float>(range_limits_z_max_);
 
-  const auto motion_msgs = selectMotionCompatibleClouds(msgs, point_step, input0_fields);
   std::vector<MotionTransform> motion_transforms;
-  const bool batch_motion_available = prepareBatchMotionTransforms(motion_msgs, chosen_stamp, time_offset, motion_transforms);
-  for (std::size_t input_idx = 0; input_idx < msgs.size(); ++input_idx) {
-    const auto& msg = msgs[input_idx];
-    if (!msg) {
-      continue;
+  const bool batch_motion = prepareBatchMotionTransforms(msgs, chosen_stamp, time_offsets, motion_transforms);
+  int output_time_offset = -1;
+  for (const auto& field : layout.fields) {
+    if (field.name == motion_compensation_time_field_ && field.datatype == sensor_msgs::msg::PointField::UINT32 &&
+        field.count == 1) {
+      output_time_offset = static_cast<int>(field.offset);
+      break;
     }
+  }
+  uint8_t* destination = output->data.data();
 
-    if (msg->point_step != point_step || msg->fields != input0_fields) {
-      RCLCPP_WARN(this->get_logger(), "Skipping point cloud '%s' due to incompatible field layout.",
-                  msg->header.frame_id.c_str());
-      ++skipped_inputs;
-      continue;
-    }
+  for (std::size_t input_index = 0; input_index < msgs.size(); ++input_index) {
+    const auto& msg = msgs[input_index];
+    const auto& input = layout.inputs[input_index];
+    if (!msg || !input.valid || msg->point_step == 0) continue;
+    const auto mapping = input_index < calibration_mappings.size() ? calibration_mappings[input_index] : nullptr;
+    const auto* input_calibration_field = mapping ? detail::findField(*msg, feature_calibration_field_) : nullptr;
+    const bool calibrate = mapping && input_calibration_field != nullptr && input_calibration_field->count == 1 &&
+                           detail::validField(*input_calibration_field, msg->point_step) &&
+                           output_calibration_field != layout.fields.end();
 
-    // Apply motion compensation only when every transform required by this
-    // synchronized batch is available.
-    const MotionTransform& motion_transform = motion_transforms[input_idx];
-    const bool motion_transform_available = batch_motion_available;
-    const bool apply_transform = motion_transform_available || msg->header.frame_id != target_frame_;
-    tf2::Vector3 translation;
-    tf2::Matrix3x3 rotation;
-    if (!motion_transform_available && apply_transform) {
-      tf2::Transform tf_transform;
-      geometry_msgs::msg::TransformStamped tf_stamped;
+    const bool apply_transform = batch_motion || msg->header.frame_id != target_frame_;
+    tf2::Vector3 translation(0.0, 0.0, 0.0);
+    tf2::Matrix3x3 rotation = tf2::Matrix3x3::getIdentity();
+    if (!batch_motion && apply_transform) {
       try {
-        tf_stamped = tf_buffer_->lookupTransform(target_frame_, msg->header.frame_id, msg->header.stamp,
-                                                 rclcpp::Duration::from_seconds(0.1));
-      } catch (const tf2::TransformException& ex) {
-        RCLCPP_ERROR(this->get_logger(), "Cannot transform point cloud from %s to %s: %s", msg->header.frame_id.c_str(),
-                     target_frame_.c_str(), ex.what());
-        ++skipped_inputs;
+        const auto stamped = tf_buffer_->lookupTransform(target_frame_, msg->header.frame_id, msg->header.stamp,
+                                                         rclcpp::Duration::from_seconds(0.1));
+        tf2::Transform transform;
+        tf2::fromMsg(stamped.transform, transform);
+        translation = transform.getOrigin();
+        rotation = transform.getBasis();
+      } catch (const tf2::TransformException& exception) {
+        skipped_cloud_count_.fetch_add(1, std::memory_order_relaxed);
+        RCLCPP_ERROR(this->get_logger(),
+                     "Cannot transform point cloud from %s to %s: %s "
+                     "(skipped_total=%llu)",
+                     msg->header.frame_id.c_str(), target_frame_.c_str(), exception.what(),
+                     static_cast<unsigned long long>(skipped_cloud_count_.load()));
         continue;
       }
-      tf2::fromMsg(tf_stamped.transform, tf_transform);
-      translation = tf_transform.getOrigin();
-      rotation = tf_transform.getBasis();
     }
 
-    const auto* src_data = msg->data.data();
-    const size_t total_points = static_cast<size_t>(msg->width) * static_cast<size_t>(msg->height);
+    const std::size_t declared_points = static_cast<std::size_t>(msg->width) * msg->height;
+    const std::size_t total_points = std::min(declared_points, msg->data.size() / msg->point_step);
+    const std::size_t samples = fixed_points_per_input_cloud_ > 0
+                                    ? std::min(total_points, static_cast<std::size_t>(fixed_points_per_input_cloud_))
+                                    : total_points;
+    if (samples == 0) continue;
+    const double stride = static_cast<double>(total_points) / static_cast<double>(samples);
 
-    auto transform_point = [&](const uint8_t* point_ptr, float x, float y, float z, float& transformed_x, float& transformed_y,
-                               float& transformed_z) {
-      if (motion_transform_available) {
-        const uint32_t point_time_offset = time_offset >= 0 ? loadUint32(point_ptr, static_cast<std::size_t>(time_offset)) : 0;
-        transformPointInterpolated(motion_transform, point_time_offset, x, y, z, transformed_x, transformed_y, transformed_z);
-        return;
+    for (std::size_t sample = 0; sample < samples; ++sample) {
+      const std::size_t point_index =
+          samples == total_points ? sample
+                                  : std::min(static_cast<std::size_t>(static_cast<double>(sample) * stride), total_points - 1);
+      const uint8_t* source = byteOffset(msg->data.data(), point_index * msg->point_step);
+      const float x = loadFloat(source, input.x_offset);
+      const float y = loadFloat(source, input.y_offset);
+      const float z = loadFloat(source, input.z_offset);
+      if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) continue;
+
+      float transformed_x = x;
+      float transformed_y = y;
+      float transformed_z = z;
+      if (batch_motion) {
+        const uint32_t point_time = loadUint32(source, static_cast<std::size_t>(input.time_offset));
+        transformPointInterpolated(motion_transforms[input_index], point_time, x, y, z, transformed_x, transformed_y,
+                                   transformed_z);
+      } else if (apply_transform) {
+        const tf2::Vector3 transformed = rotation * tf2::Vector3(x, y, z) + translation;
+        transformed_x = static_cast<float>(transformed.x());
+        transformed_y = static_cast<float>(transformed.y());
+        transformed_z = static_cast<float>(transformed.z());
       }
-      const tf2::Vector3 transformed = rotation * tf2::Vector3(x, y, z) + translation;
-      transformed_x = static_cast<float>(transformed.x());
-      transformed_y = static_cast<float>(transformed.y());
-      transformed_z = static_cast<float>(transformed.z());
-    };
+      if (check_range &&
+          !pointWithinRange(transformed_x, transformed_y, transformed_z, x_min, x_max, y_min, y_max, z_min, z_max)) {
+        continue;
+      }
 
-    auto emit_point = [&](const uint8_t* point_ptr, float x, float y, float z, bool overwrite_xyz) {
-      if (use_all_fields) {
-        std::memcpy(dest_ptr, point_ptr, point_step);
+      if (input.whole_point_copy) {
+        std::memcpy(destination, source, layout.point_step);
       } else {
-        for (const auto& plan : copy_plan) {
-          std::memcpy(byteOffset(dest_ptr, plan.destination.offset), byteOffset(point_ptr, plan.source->offset),
-                      plan.byte_length);
+        std::memset(destination, 0, layout.point_step);
+        for (const auto& copy : input.copies) {
+          std::memcpy(byteOffset(destination, copy.destination_offset), byteOffset(source, copy.source_offset), copy.byte_length);
         }
       }
-
-      if (overwrite_xyz) {
-        storeFloat(dest_ptr, *fused_x_offset, x);
-        storeFloat(dest_ptr, *fused_y_offset, y);
-        storeFloat(dest_ptr, *fused_z_offset, z);
+      storeFloat(destination, layout.x_offset, transformed_x);
+      storeFloat(destination, layout.y_offset, transformed_y);
+      storeFloat(destination, layout.z_offset, transformed_z);
+      if (output_time_offset >= 0) {
+        const uint32_t output_time =
+            batch_motion || input.time_offset < 0
+                ? 0U
+                : rebasedTimeOffset(loadUint32(source, static_cast<std::size_t>(input.time_offset)), msg->header.stamp,
+                                    chosen_stamp, motion_compensation_time_scale_sec_);
+        storeUint32(destination, static_cast<std::size_t>(output_time_offset), output_time);
       }
-
-      dest_ptr = byteOffset(dest_ptr, fused_point_step);
+      if (calibrate) {
+        float value = 0.0F;
+        if (readScalarField(byteOffset(source, input_calibration_field->offset), input_calibration_field->datatype,
+                            msg->is_bigendian, value)) {
+          writeScalarField(byteOffset(destination, output_calibration_field->offset), output_calibration_field->datatype,
+                           output->is_bigendian, mapping->apply(value));
+        }
+      }
+      destination = byteOffset(destination, layout.point_step);
       ++valid_point_count;
-    };
-
-    if (fixed_points_per_input_cloud_ <= 0 || static_cast<size_t>(fixed_points_per_input_cloud_) >= total_points) {
-      // Fast path: when no downsampling is requested.
-      for (size_t idx = 0; idx < total_points; ++idx) {
-        const auto* point_ptr = byteOffset(src_data, idx * point_step);
-        const float x = loadFloat(point_ptr, *x_offset);
-        const float y = loadFloat(point_ptr, *y_offset);
-        const float z = loadFloat(point_ptr, *z_offset);
-
-        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
-          continue;
-        }
-
-        if (!apply_transform) {
-          if (check_range && !pointWithinRange(x, y, z, rl_x_min, rl_x_max, rl_y_min, rl_y_max, rl_z_min, rl_z_max)) {
-            continue;
-          }
-          emit_point(point_ptr, x, y, z, false);
-          continue;
-        }
-
-        float transformed_x = 0.0F;
-        float transformed_y = 0.0F;
-        float transformed_z = 0.0F;
-        transform_point(point_ptr, x, y, z, transformed_x, transformed_y, transformed_z);
-
-        if (check_range && !pointWithinRange(transformed_x, transformed_y, transformed_z, rl_x_min, rl_x_max, rl_y_min, rl_y_max,
-                                             rl_z_min, rl_z_max)) {
-          continue;
-        }
-
-        emit_point(point_ptr, transformed_x, transformed_y, transformed_z, true);
-      }
-      continue;
-    }
-
-    // Downsample path: strided sampling for uniform spatial distribution.
-    const size_t desired_points = static_cast<size_t>(fixed_points_per_input_cloud_);
-    const double stride = static_cast<double>(total_points) / static_cast<double>(desired_points);
-    const size_t num_samples = desired_points;
-
-    for (size_t i = 0; i < num_samples; ++i) {
-      const size_t idx = std::min(static_cast<size_t>(static_cast<double>(i) * stride), total_points - 1);
-
-      const auto* point_ptr = byteOffset(src_data, idx * point_step);
-      const float x = loadFloat(point_ptr, *x_offset);
-      const float y = loadFloat(point_ptr, *y_offset);
-      const float z = loadFloat(point_ptr, *z_offset);
-
-      if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
-        continue;
-      }
-
-      if (!apply_transform) {
-        if (check_range && !pointWithinRange(x, y, z, rl_x_min, rl_x_max, rl_y_min, rl_y_max, rl_z_min, rl_z_max)) {
-          continue;
-        }
-        emit_point(point_ptr, x, y, z, false);
-        continue;
-      }
-
-      float transformed_x = 0.0F;
-      float transformed_y = 0.0F;
-      float transformed_z = 0.0F;
-      transform_point(point_ptr, x, y, z, transformed_x, transformed_y, transformed_z);
-
-      if (check_range && !pointWithinRange(transformed_x, transformed_y, transformed_z, rl_x_min, rl_x_max, rl_y_min, rl_y_max,
-                                           rl_z_min, rl_z_max)) {
-        continue;
-      }
-
-      emit_point(point_ptr, transformed_x, transformed_y, transformed_z, true);
     }
   }
 
-  if (valid_point_count == 0) {
-    if (skipped_inputs == msgs.size()) {
-      RCLCPP_WARN(this->get_logger(), "Skipped all point clouds in synchronized batch; no data fused.");
-    }
-    return nullptr;
-  }
-
+  if (valid_point_count == 0) return nullptr;
   output->width = valid_point_count;
   output->row_step = output->point_step * output->width;
-  output->data.resize(valid_point_count * fused_point_step);
-
-  output->is_dense = true;
+  output->data.resize(valid_point_count * output->point_step);
   return output;
 }
 
@@ -1417,6 +1387,59 @@ void PointCloudFusion::configureOutputStampMode(const std::string& mode) {
   }
 }
 
+void PointCloudFusion::configureFeatureCalibration() {
+  if (!feature_calibration_enable_) return;
+  std::string mode = feature_calibration_mode_;
+  std::transform(mode.begin(), mode.end(), mode.begin(),
+                 [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+  if (mode != "distribution") {
+    throw std::invalid_argument("feature_calibration.mode must be 'distribution'");
+  }
+  if (!detail::fieldIsPublished(output_fields_, feature_calibration_field_)) {
+    throw std::invalid_argument("feature_calibration.field must be included in output_fields");
+  }
+  const auto indices = [this](const std::vector<std::string>& topics, const char* role) {
+    std::vector<std::size_t> result;
+    for (const auto& topic : topics) {
+      const auto it = std::find(input_topics_.begin(), input_topics_.end(), topic);
+      if (it == input_topics_.end()) {
+        RCLCPP_FATAL(this->get_logger(), "Feature-calibration %s topic '%s' is not present in input_topics", role, topic.c_str());
+        throw std::invalid_argument("feature calibration topic is not an input");
+      }
+      result.push_back(static_cast<std::size_t>(it - input_topics_.begin()));
+    }
+    return result;
+  };
+  auto leaders = indices(feature_calibration_leading_inputs_, "leader");
+  auto followers = indices(feature_calibration_follower_inputs_, "follower");
+  if (feature_calibration_field_.empty() || leaders.empty() || followers.empty()) {
+    throw std::invalid_argument("enabled feature calibration requires a field, leading_inputs, and follower_inputs");
+  }
+  for (const auto follower : followers) {
+    if (std::find(leaders.begin(), leaders.end(), follower) != leaders.end()) {
+      throw std::invalid_argument("an input cannot be both a feature-calibration leader and follower");
+    }
+  }
+  if (feature_calibration_minimum_samples_ > feature_calibration_window_samples_) {
+    throw std::invalid_argument("feature_calibration.minimum_samples must not exceed window_samples");
+  }
+  DistributionFeatureCalibrator::Config config;
+  config.field = feature_calibration_field_;
+  config.leaders = std::move(leaders);
+  config.followers = std::move(followers);
+  config.input_count = input_topics_.size();
+  config.samples_per_cloud = static_cast<std::size_t>(feature_calibration_samples_per_cloud_);
+  config.window_samples = static_cast<std::size_t>(feature_calibration_window_samples_);
+  config.minimum_samples = static_cast<std::size_t>(feature_calibration_minimum_samples_);
+  config.quantile_count = static_cast<std::size_t>(feature_calibration_quantiles_);
+  config.update_interval_sec = feature_calibration_update_interval_sec_;
+  feature_calibrator_ = std::make_unique<DistributionFeatureCalibrator>(
+      std::move(config), [this](const std::string& message) { RCLCPP_INFO(this->get_logger(), "%s", message.c_str()); });
+  RCLCPP_INFO(this->get_logger(), "Asynchronous distribution calibration enabled for field '%s' (%zu leaders, %zu followers)",
+              feature_calibration_field_.c_str(), feature_calibration_leading_inputs_.size(),
+              feature_calibration_follower_inputs_.size());
+}
+
 void PointCloudFusion::validateInputTopicsParameter() const {
   if (input_topics_.empty()) {
     RCLCPP_FATAL(this->get_logger(), "No input topics configured (parameter 'input_topics'). Exiting");
@@ -1460,258 +1483,201 @@ void PointCloudFusion::validateRangeLimits() {
 }
 
 #ifdef ENABLE_CUDA
+
 PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatchCUDA(
     const std::vector<PointCloudMsg::ConstSharedPtr>& msgs, const FusionTiming& timing, std::size_t& valid_point_count) const {
-  if (msgs.empty() || !cuda_context_) {
+  valid_point_count = 0;
+  if (msgs.empty() || !cuda_context_) return nullptr;
+
+  const bool publish_time_field = detail::fieldIsPublished(output_fields_, motion_compensation_time_field_);
+  const auto processing_fields =
+      detail::processingFields(output_fields_, motion_compensation_time_field_, motion_compensation_enable_);
+  const detail::BatchLayout processing_layout =
+      detail::buildBatchLayout(msgs, processing_fields, motion_compensation_time_field_);
+  const detail::BatchLayout output_layout =
+      publish_time_field ? processing_layout : detail::buildBatchLayout(msgs, output_fields_, motion_compensation_time_field_);
+  if (processing_layout.point_step == 0 || output_layout.point_step == 0) {
+    RCLCPP_WARN(this->get_logger(), "CUDA: no input cloud has valid FLOAT32 x/y/z fields; skipping batch");
     return nullptr;
   }
-
-  const auto& input0_msg = msgs.front();
-  if (!input0_msg) {
-    return nullptr;
+  for (const auto& name : processing_layout.conflicting_fields) {
+    incompatible_field_count_.fetch_add(1, std::memory_order_relaxed);
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "CUDA: omitting incompatible same-name field '%s'",
+                         name.c_str());
   }
+  const auto calibration_mappings =
+      feature_calibrator_ ? feature_calibrator_->mappings() : std::vector<std::shared_ptr<const FeatureMapping>>(msgs.size());
+  const auto output_calibration_field =
+      std::find_if(output_layout.fields.begin(), output_layout.fields.end(),
+                   [this](const auto& field) { return field.name == feature_calibration_field_ && field.count == 1; });
+  const bool has_active_calibration = output_calibration_field != output_layout.fields.end() &&
+                                      std::any_of(calibration_mappings.begin(), calibration_mappings.end(),
+                                                  [](const auto& mapping) { return mapping != nullptr; });
+  // A private FLOAT32 slot preserves a follower feature even when its ROS
+  // datatype differs from the output datatype (for example Aeva FLOAT32 to
+  // Ouster UINT16 reflectivity). It is consumed by the CUDA kernel and never
+  // appears in the published layout.
+  const std::size_t calibration_scratch_offset = processing_layout.point_step;
+  const std::size_t processing_point_step = processing_layout.point_step + (has_active_calibration ? sizeof(float) : 0U);
 
-  // Find x, y, z field offsets
-  int x_offset = -1, y_offset = -1, z_offset = -1, time_offset = -1;
-  for (const auto& field : input0_msg->fields) {
-    if (field.name == "x")
-      x_offset = field.offset;
-    else if (field.name == "y")
-      y_offset = field.offset;
-    else if (field.name == "z")
-      z_offset = field.offset;
-    else if (field.name == motion_compensation_time_field_ && field.datatype == sensor_msgs::msg::PointField::UINT32 &&
-             field.count == 1)
-      time_offset = static_cast<int>(field.offset);
-  }
-
-  if (x_offset < 0 || y_offset < 0 || z_offset < 0) {
-    RCLCPP_WARN(this->get_logger(), "Point cloud lacks x/y/z fields; skipping CUDA fusion");
-    valid_point_count = 0;
-    return nullptr;
-  }
-
-  const size_t point_step = input0_msg->point_step;
-  const auto& input0_fields = input0_msg->fields;
-  const bool is_bigendian = input0_msg->is_bigendian;
-
-  // Determine output fields and copy plan
-  bool use_all_fields = output_fields_.empty();
-  std::vector<sensor_msgs::msg::PointField> fused_fields;
-  fused_fields.reserve(input0_fields.size());
-  std::vector<cuda::CudaFieldCopy> copy_plan;
-
-  std::size_t fused_point_step = point_step;
-  int fused_x_offset = x_offset;
-  int fused_y_offset = y_offset;
-  int fused_z_offset = z_offset;
-
-  if (!use_all_fields) {
-    bool selection_valid = true;
-    fused_point_step = 0;
-    fused_fields.clear();
-    copy_plan.reserve(output_fields_.size());
-
-    for (const auto& requested_name : output_fields_) {
-      auto iter =
-          std::find_if(input0_fields.begin(), input0_fields.end(),
-                       [&requested_name](const sensor_msgs::msg::PointField& field) { return field.name == requested_name; });
-      if (iter == input0_fields.end()) {
-        RCLCPP_WARN(this->get_logger(),
-                    "Requested output field '%s' not present in incoming point "
-                    "cloud; publishing full field set instead.",
-                    requested_name.c_str());
-        selection_valid = false;
-        break;
-      }
-
-      const std::size_t datatype_size = pointFieldDatatypeSize(iter->datatype);
-      if (datatype_size == 0) {
-        RCLCPP_WARN(this->get_logger(),
-                    "Point field '%s' uses unsupported datatype %u; publishing "
-                    "full field set instead.",
-                    requested_name.c_str(), static_cast<unsigned int>(iter->datatype));
-        selection_valid = false;
-        break;
-      }
-
-      cuda::CudaFieldCopy plan;
-      plan.src_offset = static_cast<int>(iter->offset);
-      plan.dst_offset = static_cast<int>(fused_point_step);
-      plan.size = static_cast<int>(datatype_size * iter->count);
-
-      sensor_msgs::msg::PointField dest_field = *iter;
-      dest_field.offset = static_cast<uint32_t>(fused_point_step);
-
-      fused_point_step += plan.size;
-
-      if (requested_name == "x")
-        fused_x_offset = dest_field.offset;
-      else if (requested_name == "y")
-        fused_y_offset = dest_field.offset;
-      else if (requested_name == "z")
-        fused_z_offset = dest_field.offset;
-
-      copy_plan.push_back(plan);
-      fused_fields.push_back(dest_field);
-    }
-
-    if (!selection_valid || fused_x_offset < 0 || fused_y_offset < 0 || fused_z_offset < 0) {
-      if (selection_valid) {
-        RCLCPP_ERROR(this->get_logger(),
-                     "Output field selection must include x, y, and z; "
-                     "publishing full field set instead.");
-      }
-      use_all_fields = true;
-      copy_plan.clear();
-      fused_point_step = point_step;
-      fused_fields.assign(input0_fields.begin(), input0_fields.end());
-      fused_x_offset = x_offset;
-      fused_y_offset = y_offset;
-      fused_z_offset = z_offset;
-    }
-  }
-
-  if (use_all_fields) {
-    fused_fields.assign(input0_fields.begin(), input0_fields.end());
-    fused_point_step = point_step;
-    fused_x_offset = x_offset;
-    fused_y_offset = y_offset;
-    fused_z_offset = z_offset;
-
-    // If using all fields, we can just copy the whole point step as one chunk
-    // But we still need to overwrite XYZ.
-    // Actually, if we use all fields, we can just create a single copy op for
-    // the whole point OR we can iterate over fields if we want to be precise,
-    // but copying the whole struct is faster. Let's just create one copy op for
-    // the whole point.
-    cuda::CudaFieldCopy plan;
-    plan.src_offset = 0;
-    plan.dst_offset = 0;
-    plan.size = static_cast<int>(point_step);
-    copy_plan.push_back(plan);
-  }
-
-  // Calculate max points for batch reset. For strided sampling, slots must hold
-  // the full input cloud because the kernel samples across the original range.
-  size_t max_single_cloud_points = 0;  // Max points in any single input cloud (for slot sizing)
-  for (const auto& msg : msgs) {
-    if (msg) {
-      size_t cloud_size = msg->width * msg->height;
-      max_single_cloud_points = std::max(max_single_cloud_points, cloud_size);
-    }
-  }
-
-  if (max_single_cloud_points == 0) {
-    valid_point_count = 0;
-    return nullptr;
-  }
-
-  // slot_size is the FULL max cloud size (not capped) for strided sampling to
-  // work
-  size_t slot_size = max_single_cloud_points;
-
-  // Total input capacity is slot_size * number_of_inputs
-  const size_t num_inputs = msgs.size();
-  size_t total_input_capacity = slot_size * num_inputs;
-  const rclcpp::Time chosen_stamp = outputStamp(timing);
-  const auto motion_msgs = selectMotionCompatibleClouds(msgs, point_step, input0_fields);
-  std::vector<MotionTransform> motion_transforms;
-  const bool batch_motion_available = prepareBatchMotionTransforms(motion_msgs, chosen_stamp, time_offset, motion_transforms);
-
-  // Reset batch with fixed slots.
-  if (!cuda_context_->resetBatch(total_input_capacity, slot_size, point_step, fused_point_step, x_offset, y_offset, z_offset,
-                                 fused_x_offset, fused_y_offset, fused_z_offset, copy_plan,
-                                 static_cast<float>(range_limits_x_min_), static_cast<float>(range_limits_x_max_),
-                                 static_cast<float>(range_limits_y_min_), static_cast<float>(range_limits_y_max_),
-                                 static_cast<float>(range_limits_z_min_), static_cast<float>(range_limits_z_max_),
-                                 range_limits_enable_)) {
-    RCLCPP_ERROR(this->get_logger(), "CUDA resetBatch failed");
-    return nullptr;
-  }
-
-  // Process each cloud and write into its fixed slot index (preserve input
-  // order)
-  for (size_t i = 0; i < msgs.size(); ++i) {
+  // Heterogeneous clouds are packed into one processing layout on the host.
+  // It may contain a private time field used by motion compensation. The CUDA
+  // kernel writes the published layout directly, avoiding a second full-cloud
+  // compaction pass when that private field is not published.
+  std::vector<std::vector<uint8_t>> packed(msgs.size());
+  std::vector<const uint8_t*> input_data(msgs.size(), nullptr);
+  std::vector<std::size_t> point_counts(msgs.size(), 0);
+  std::vector<int> source_time_offsets(msgs.size(), -2);
+  std::size_t max_points = 0;
+  for (std::size_t i = 0; i < msgs.size(); ++i) {
     const auto& msg = msgs[i];
-    if (!msg || msg->point_step != point_step || msg->fields != input0_fields) {
+    const auto& input = processing_layout.inputs[i];
+    if (!msg || !input.valid || msg->point_step == 0) {
+      if (msg) {
+        missing_xyz_count_.fetch_add(1, std::memory_order_relaxed);
+        skipped_cloud_count_.fetch_add(1, std::memory_order_relaxed);
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "CUDA: skipping cloud from '%s': %s",
+                             msg->header.frame_id.c_str(), input.rejection_reason.c_str());
+      }
       continue;
     }
+    source_time_offsets[i] = input.time_offset;
+    point_counts[i] = std::min(static_cast<std::size_t>(msg->width) * msg->height, msg->data.size() / msg->point_step);
+    max_points = std::max(max_points, point_counts[i]);
+    if (input.whole_point_copy && !has_active_calibration) {
+      input_data[i] = msg->data.data();
+      continue;
+    }
+    packed[i].assign(point_counts[i] * processing_point_step, 0);
+    const auto mapping = i < calibration_mappings.size() ? calibration_mappings[i] : nullptr;
+    const auto* calibration_field = mapping ? detail::findField(*msg, feature_calibration_field_) : nullptr;
+    const bool pack_calibration =
+        calibration_field != nullptr && calibration_field->count == 1 && detail::validField(*calibration_field, msg->point_step);
+    for (std::size_t point = 0; point < point_counts[i]; ++point) {
+      const uint8_t* source = byteOffset(msg->data.data(), point * msg->point_step);
+      uint8_t* destination = byteOffset(packed[i].data(), point * processing_point_step);
+      if (input.whole_point_copy) {
+        std::memcpy(destination, source, processing_layout.point_step);
+      } else {
+        for (const auto& copy : input.copies) {
+          std::memcpy(byteOffset(destination, copy.destination_offset), byteOffset(source, copy.source_offset), copy.byte_length);
+        }
+      }
+      if (pack_calibration) {
+        float value = 0.0F;
+        if (readScalarField(source + calibration_field->offset, calibration_field->datatype, msg->is_bigendian, value)) {
+          std::memcpy(byteOffset(destination, calibration_scratch_offset), &value, sizeof(value));
+        }
+      }
+    }
+    input_data[i] = packed[i].data();
+    if (!input.zero_filled_fields.empty()) {
+      zero_filled_field_count_.fetch_add(input.zero_filled_fields.size(), std::memory_order_relaxed);
+    }
+  }
+  if (max_points == 0) return nullptr;
 
-    // Apply motion compensation only when every transform required by this
-    // synchronized batch is available.
-    const MotionTransform& motion_transform = motion_transforms[i];
-    const bool motion_transform_available = batch_motion_available;
-    const bool apply_transform = motion_transform_available || msg->header.frame_id != target_frame_;
-    float rotation_matrix[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+  int packed_time_offset = -1;
+  for (const auto& field : processing_layout.fields) {
+    if (field.name == motion_compensation_time_field_ && field.datatype == sensor_msgs::msg::PointField::UINT32 &&
+        field.count == 1) {
+      packed_time_offset = static_cast<int>(field.offset);
+      break;
+    }
+  }
+  const rclcpp::Time chosen_stamp = outputStamp(timing);
+  std::vector<MotionTransform> motion_transforms;
+  const bool batch_motion = prepareBatchMotionTransforms(msgs, chosen_stamp, source_time_offsets, motion_transforms);
+  const std::size_t total_capacity = max_points * msgs.size();
+  int output_time_offset = -1;
+  std::vector<cuda::CudaFieldCopy> copy_plan;
+  copy_plan.reserve(output_layout.fields.size());
+  for (const auto& output_field : output_layout.fields) {
+    const auto source = std::find_if(
+        processing_layout.fields.begin(), processing_layout.fields.end(),
+        [&output_field](const auto& field) { return field.name == output_field.name && detail::sameType(field, output_field); });
+    if (source == processing_layout.fields.end()) {
+      RCLCPP_ERROR(this->get_logger(), "CUDA: output field '%s' is absent from processing layout", output_field.name.c_str());
+      return nullptr;
+    }
+    copy_plan.push_back({static_cast<int>(source->offset), static_cast<int>(output_field.offset),
+                         static_cast<int>(detail::fieldDatatypeSize(output_field.datatype) * output_field.count)});
+    if (output_field.name == motion_compensation_time_field_ && output_field.datatype == sensor_msgs::msg::PointField::UINT32 &&
+        output_field.count == 1) {
+      output_time_offset = static_cast<int>(output_field.offset);
+    }
+  }
+  if (!cuda_context_->resetBatch(total_capacity, max_points, processing_point_step, output_layout.point_step,
+                                 static_cast<int>(processing_layout.x_offset), static_cast<int>(processing_layout.y_offset),
+                                 static_cast<int>(processing_layout.z_offset), static_cast<int>(output_layout.x_offset),
+                                 static_cast<int>(output_layout.y_offset), static_cast<int>(output_layout.z_offset),
+                                 output_time_offset, copy_plan, static_cast<float>(range_limits_x_min_),
+                                 static_cast<float>(range_limits_x_max_), static_cast<float>(range_limits_y_min_),
+                                 static_cast<float>(range_limits_y_max_), static_cast<float>(range_limits_z_min_),
+                                 static_cast<float>(range_limits_z_max_), range_limits_enable_)) {
+    RCLCPP_ERROR(this->get_logger(), "CUDA resetBatch failed for heterogeneous layout");
+    return nullptr;
+  }
+
+  for (std::size_t i = 0; i < msgs.size(); ++i) {
+    if (!input_data[i] || point_counts[i] == 0) continue;
+    const auto& msg = msgs[i];
+    const bool apply_transform = batch_motion || msg->header.frame_id != target_frame_;
+    float rotation[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
     float translation[3] = {0, 0, 0};
-
-    if (!motion_transform_available && apply_transform) {
+    if (!batch_motion && apply_transform) {
       try {
-        auto tf_stamped = tf_buffer_->lookupTransform(target_frame_, msg->header.frame_id, msg->header.stamp,
-                                                      rclcpp::Duration::from_seconds(0.1));
-        tf2::Transform tf_transform;
-        tf2::fromMsg(tf_stamped.transform, tf_transform);
-        auto rot = tf_transform.getBasis();
-        auto trans = tf_transform.getOrigin();
-
-        rotation_matrix[0] = rot[0][0];
-        rotation_matrix[1] = rot[0][1];
-        rotation_matrix[2] = rot[0][2];
-        rotation_matrix[3] = rot[1][0];
-        rotation_matrix[4] = rot[1][1];
-        rotation_matrix[5] = rot[1][2];
-        rotation_matrix[6] = rot[2][0];
-        rotation_matrix[7] = rot[2][1];
-        rotation_matrix[8] = rot[2][2];
-        translation[0] = trans.x();
-        translation[1] = trans.y();
-        translation[2] = trans.z();
-      } catch (const tf2::TransformException& ex) {
-        RCLCPP_ERROR(this->get_logger(), "CUDA: Cannot transform %s to %s: %s", msg->header.frame_id.c_str(),
-                     target_frame_.c_str(), ex.what());
+        const auto stamped = tf_buffer_->lookupTransform(target_frame_, msg->header.frame_id, msg->header.stamp,
+                                                         rclcpp::Duration::from_seconds(0.1));
+        tf2::Transform transform;
+        tf2::fromMsg(stamped.transform, transform);
+        const auto basis = transform.getBasis();
+        const auto origin = transform.getOrigin();
+        for (int row = 0; row < 3; ++row) {
+          for (int column = 0; column < 3; ++column) rotation[row * 3 + column] = basis[row][column];
+        }
+        translation[0] = origin.x();
+        translation[1] = origin.y();
+        translation[2] = origin.z();
+      } catch (const tf2::TransformException& exception) {
+        skipped_cloud_count_.fetch_add(1, std::memory_order_relaxed);
+        RCLCPP_ERROR(this->get_logger(), "CUDA: cannot transform %s to %s: %s", msg->header.frame_id.c_str(),
+                     target_frame_.c_str(), exception.what());
         continue;
       }
     }
-
-    // Send ALL points to GPU - strided sampling happens in the kernel
-    size_t num_points = msg->width * msg->height;
-    const uint8_t* data_ptr = msg->data.data();
-
-    // Pass desired_points for strided sampling (0 = all points)
-    const int desired_points = (fixed_points_per_input_cloud_ > 0) ? static_cast<int>(fixed_points_per_input_cloud_) : 0;
-
-    if (!cuda_context_->addCloud(data_ptr, num_points, rotation_matrix, translation, apply_transform, i, desired_points,
-                                 motion_transform_available, time_offset, motion_transform.max_time_offset,
-                                 motion_transform.start_translation.data(), motion_transform.end_translation.data(),
-                                 motion_transform.start_quaternion.data(), motion_transform.end_quaternion.data())) {
-      RCLCPP_ERROR(this->get_logger(), "CUDA addCloud failed");
-      continue;
+    const int desired = fixed_points_per_input_cloud_ > 0 ? static_cast<int>(fixed_points_per_input_cloud_) : 0;
+    const auto& motion = motion_transforms[i];
+    const int cuda_time_offset = source_time_offsets[i] >= 0 ? packed_time_offset : -1;
+    const int64_t time_rebase_units = stampDeltaInTimeUnits(msg->header.stamp, chosen_stamp, motion_compensation_time_scale_sec_);
+    const auto mapping = i < calibration_mappings.size() ? calibration_mappings[i] : nullptr;
+    const auto* input_calibration_field = mapping ? detail::findField(*msg, feature_calibration_field_) : nullptr;
+    const bool calibrate = has_active_calibration && mapping && input_calibration_field != nullptr &&
+                           input_calibration_field->count == 1 && detail::validField(*input_calibration_field, msg->point_step);
+    if (!cuda_context_->addCloud(input_data[i], point_counts[i], rotation, translation, apply_transform, i, desired, batch_motion,
+                                 cuda_time_offset, motion.max_time_offset, time_rebase_units, motion.start_translation.data(),
+                                 motion.end_translation.data(), motion.start_quaternion.data(), motion.end_quaternion.data(),
+                                 calibrate ? static_cast<int>(calibration_scratch_offset) : -1,
+                                 calibrate ? static_cast<int>(output_calibration_field->offset) : -1,
+                                 calibrate ? static_cast<int>(sensor_msgs::msg::PointField::FLOAT32) : 0,
+                                 calibrate ? static_cast<int>(output_calibration_field->datatype) : 0,
+                                 calibrate ? static_cast<int>(mapping->source.size()) : 0,
+                                 calibrate ? mapping->source.data() : nullptr, calibrate ? mapping->target.data() : nullptr)) {
+      RCLCPP_ERROR(this->get_logger(), "CUDA addCloud failed for input %zu", i);
     }
   }
 
-  // Get result directly into output vector
   auto output = std::make_unique<PointCloudMsg>();
   output->header.frame_id = target_frame_;
   output->header.stamp = chosen_stamp;
   output->height = 1;
-  output->is_bigendian = is_bigendian;
-  output->point_step = fused_point_step;
-  output->fields = fused_fields;
+  output->is_bigendian = output_layout.is_bigendian;
+  output->point_step = output_layout.point_step;
+  output->fields = output_layout.fields;
   output->is_dense = true;
-
-  if (!cuda_context_->getBatchOutput(output->data, valid_point_count)) {
-    RCLCPP_ERROR(this->get_logger(), "CUDA getBatchOutput failed");
-    return nullptr;
-  }
-
-  if (valid_point_count == 0) {
-    return nullptr;
-  }
-
+  if (!cuda_context_->getBatchOutput(output->data, valid_point_count) || valid_point_count == 0) return nullptr;
   output->width = valid_point_count;
   output->row_step = output->point_step * output->width;
-
   return output;
 }
 #endif  // ENABLE_CUDA

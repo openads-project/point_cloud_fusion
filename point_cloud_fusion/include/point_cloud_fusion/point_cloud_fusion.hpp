@@ -27,6 +27,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
+#include <point_cloud_fusion/feature_calibration.hpp>
 #include <point_cloud_fusion/motion_compensation.hpp>
 
 #ifdef ENABLE_CUDA
@@ -53,6 +54,21 @@ class PointCloudFusion : public rclcpp::Node {
    * @param options node options
    */
   explicit PointCloudFusion(const rclcpp::NodeOptions& options);
+
+  /** @brief Stop background workers before destroying node resources. */
+  ~PointCloudFusion() override;
+
+  /** @brief Fusion nodes cannot be copied. */
+  PointCloudFusion(const PointCloudFusion&) = delete;
+
+  /** @brief Fusion nodes cannot be copy-assigned. */
+  PointCloudFusion& operator=(const PointCloudFusion&) = delete;
+
+  /** @brief Fusion nodes cannot be moved. */
+  PointCloudFusion(PointCloudFusion&&) = delete;
+
+  /** @brief Fusion nodes cannot be move-assigned. */
+  PointCloudFusion& operator=(PointCloudFusion&&) = delete;
 
  private:
   /**
@@ -162,7 +178,7 @@ class PointCloudFusion : public rclcpp::Node {
    */
   bool prepareBatchMotionTransforms(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
                                     const rclcpp::Time& reference_stamp,
-                                    int time_field_offset,
+                                    const std::vector<int>& time_field_offsets,
                                     std::vector<MotionTransform>& transforms) const;
 
   /**
@@ -224,6 +240,9 @@ class PointCloudFusion : public rclcpp::Node {
    */
   void validateRangeLimits();
 
+  /** @brief Validate calibration parameters and start the background calibrator. */
+  void configureFeatureCalibration();
+
   static constexpr int32_t kMinSyncQueueSize = 1;
   static constexpr int32_t kMaxSyncQueueSize = 1000;
   static constexpr int32_t kStepSizeSyncQueueSize = 1;
@@ -265,12 +284,27 @@ class PointCloudFusion : public rclcpp::Node {
   double motion_compensation_time_scale_sec_ = 1.0e-9;
   double motion_compensation_tf_timeout_sec_ = 0.1;
   mutable std::atomic_bool motion_tf_available_{true};
+  mutable std::atomic_uint64_t skipped_cloud_count_{0};
+  mutable std::atomic_uint64_t missing_xyz_count_{0};
+  mutable std::atomic_uint64_t incompatible_field_count_{0};
+  mutable std::atomic_uint64_t zero_filled_field_count_{0};
   OutputStampMode output_stamp_mode_ = OutputStampMode::Earliest;
   std::string output_stamp_mode_param_ = "earliest";
   std::string target_frame_ = "base_link";
   std::vector<std::string> output_fields_;
   std::vector<std::string> input_topics_;
   std::vector<std::string> input_transport_hints_;
+  bool feature_calibration_enable_ = false;
+  std::string feature_calibration_mode_ = "distribution";
+  std::string feature_calibration_field_ = "reflectivity";
+  std::vector<std::string> feature_calibration_leading_inputs_;
+  std::vector<std::string> feature_calibration_follower_inputs_;
+  int64_t feature_calibration_samples_per_cloud_ = 2048;
+  int64_t feature_calibration_window_samples_ = 100000;
+  int64_t feature_calibration_minimum_samples_ = 20000;
+  int64_t feature_calibration_quantiles_ = 64;
+  double feature_calibration_update_interval_sec_ = 3.0;
+  std::unique_ptr<DistributionFeatureCalibrator> feature_calibrator_;
 
   /**
    * @brief Auto-reconfigurable parameters for dynamic reconfiguration

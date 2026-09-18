@@ -35,6 +35,17 @@
     #   - "intensity"
     #   - ...
     output_stamp_mode: "earliest"
+    feature_calibration:
+      enable: false # Continuously map follower feature distributions to the pooled, unchanged leader distribution
+      mode: distribution # Continuous quantile-distribution mapping; currently the only supported mode
+      field: reflectivity # Scalar field to calibrate, typically reflectivity or intensity
+      leading_inputs: [] # Input topics forming the unchanged reference distribution; entries must occur in input_topics
+      follower_inputs: [] # Input topics remapped to the reference distribution; entries must occur in input_topics
+      samples_per_cloud: 2048 # Maximum rotating stratified samples collected from each selected cloud
+      window_samples: 100000 # Rolling sample capacity maintained separately for each selected sensor
+      minimum_samples: 20000 # Samples required before activating a follower mapping
+      quantiles: 64 # Number of tail-dense piecewise-linear quantile intervals; allowed: 2..64
+      update_interval_sec: 3.0 # Minimum interval between background mapping updates [s]
 
     # --- point_cloud_transport parameters -----
     # point_cloud_fusion.output.enable_pub_plugins:

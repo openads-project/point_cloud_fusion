@@ -12,6 +12,8 @@
 namespace point_cloud_fusion {
 namespace cuda {
 
+constexpr int kMaxCalibrationKnots = 65;
+
 struct CudaFieldCopy {
   int src_offset;
   int dst_offset;
@@ -29,10 +31,18 @@ struct CloudMetadata {
   int motion_compensation;
   int time_offset;
   unsigned int max_time_offset;
+  int64_t time_rebase_units;
   float start_translation[3];
   float end_translation[3];
   float start_quaternion[4];
   float end_quaternion[4];
+  int calibration_source_offset;
+  int calibration_destination_offset;
+  int calibration_source_datatype;
+  int calibration_destination_datatype;
+  int calibration_knot_count;
+  float calibration_source[kMaxCalibrationKnots];
+  float calibration_target[kMaxCalibrationKnots];
 };
 
 /**
@@ -77,6 +87,7 @@ class CudaTransformContext {
                   int dst_x_offset,
                   int dst_y_offset,
                   int dst_z_offset,
+                  int dst_time_offset,
                   const std::vector<CudaFieldCopy>& copy_plan,
                   float x_min,
                   float x_max,
@@ -109,10 +120,18 @@ class CudaTransformContext {
                 bool motion_compensation = false,
                 int time_offset = -1,
                 unsigned int max_time_offset = 0,
+                int64_t time_rebase_units = 0,
                 const float* start_translation = nullptr,
                 const float* end_translation = nullptr,
                 const float* start_quaternion = nullptr,
-                const float* end_quaternion = nullptr);
+                const float* end_quaternion = nullptr,
+                int calibration_source_offset = -1,
+                int calibration_destination_offset = -1,
+                int calibration_source_datatype = 0,
+                int calibration_destination_datatype = 0,
+                int calibration_knot_count = 0,
+                const float* calibration_source = nullptr,
+                const float* calibration_target = nullptr);
 
   /**
    * @brief Get the accumulated results from the batch
@@ -157,6 +176,7 @@ class CudaTransformContext {
   int current_dst_x_offset_;
   int current_dst_y_offset_;
   int current_dst_z_offset_;
+  int current_dst_time_offset_;
   float current_x_min_;
   float current_x_max_;
   float current_y_min_;

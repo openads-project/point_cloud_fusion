@@ -80,7 +80,10 @@ find_package(tracetools REQUIRED)
 set(TARGET_NAME point_cloud_fusion_component)
 
 # Source files
-set(SOURCES src/point_cloud_fusion.cpp)
+set(SOURCES
+  src/feature_calibration.cpp
+  src/point_cloud_fusion.cpp
+)
 
 # Add CUDA sources if enabled
 if(ENABLE_CUDA)
@@ -164,6 +167,17 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_motion_compensation test/test_motion_compensation.cpp)
   target_include_directories(test_motion_compensation PRIVATE include)
+
+  ament_add_gtest(test_point_cloud_layout test/test_point_cloud_layout.cpp)
+  target_include_directories(test_point_cloud_layout PRIVATE include)
+  ament_target_dependencies(test_point_cloud_layout sensor_msgs)
+
+  ament_add_gtest(test_feature_calibration
+    test/test_feature_calibration.cpp
+    src/feature_calibration.cpp
+  )
+  target_include_directories(test_feature_calibration PRIVATE include)
+  ament_target_dependencies(test_feature_calibration sensor_msgs)
 endif()
 
 ament_package()
