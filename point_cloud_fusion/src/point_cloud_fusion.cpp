@@ -686,7 +686,11 @@ void PointCloudFusion::setup() {
     subscription_options.callback_group = callback_group;
 
     auto subscriber = std::make_shared<point_cloud_transport::SubscriberFilter>();
-    subscriber->subscribe(this->shared_from_this(), resolved, hint, rmw_qos_profile_default, subscription_options);
+    // Point clouds are sensor data and are commonly published best-effort to
+    // avoid back-pressure on high-bandwidth streams. A best-effort subscriber
+    // remains compatible with reliable publishers, so it also supports mixed
+    // sensor setups (for example, best-effort Aeva and reliable Ouster).
+    subscriber->subscribe(this->shared_from_this(), resolved, hint, rmw_qos_profile_sensor_data, subscription_options);
     RCLCPP_INFO(this->get_logger(), "Subscribed to '%s' (hint=%s)", subscriber->getTopic().c_str(), hint.c_str());
     cloud_subscriber_callback_groups_.push_back(std::move(callback_group));
     cloud_subscribers_.push_back(std::move(subscriber));
