@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 namespace point_cloud_fusion {
 
@@ -23,6 +24,22 @@ struct MotionTransform {
   std::array<float, 4> end_quaternion{0.0F, 0.0F, 0.0F, 1.0F};
   uint32_t max_time_offset{0};
 };
+
+/**
+ * @brief Keep batch indices while excluding clouds with incompatible layouts.
+ */
+template <typename PointCloudPtr, typename Fields>
+std::vector<PointCloudPtr> selectMotionCompatibleClouds(const std::vector<PointCloudPtr>& msgs,
+                                                        std::size_t point_step,
+                                                        const Fields& fields) {
+  std::vector<PointCloudPtr> motion_msgs = msgs;
+  for (auto& motion_msg : motion_msgs) {
+    if (motion_msg && (motion_msg->point_step != point_step || motion_msg->fields != fields)) {
+      motion_msg.reset();
+    }
+  }
+  return motion_msgs;
+}
 
 /**
  * @brief Transform a point using normalized quaternion interpolation.
