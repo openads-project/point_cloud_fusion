@@ -27,6 +27,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
+#include <point_cloud_fusion/feature_calibration.hpp>
 #include <point_cloud_fusion/motion_compensation.hpp>
 
 #ifdef ENABLE_CUDA
@@ -53,6 +54,11 @@ class PointCloudFusion : public rclcpp::Node {
    * @param options node options
    */
   explicit PointCloudFusion(const rclcpp::NodeOptions& options);
+  ~PointCloudFusion() override;
+  PointCloudFusion(const PointCloudFusion&) = delete;
+  PointCloudFusion& operator=(const PointCloudFusion&) = delete;
+  PointCloudFusion(PointCloudFusion&&) = delete;
+  PointCloudFusion& operator=(PointCloudFusion&&) = delete;
 
  private:
   /**
@@ -223,6 +229,7 @@ class PointCloudFusion : public rclcpp::Node {
    * invalid.
    */
   void validateRangeLimits();
+  void configureFeatureCalibration();
 
   static constexpr int32_t kMinSyncQueueSize = 1;
   static constexpr int32_t kMaxSyncQueueSize = 1000;
@@ -275,6 +282,17 @@ class PointCloudFusion : public rclcpp::Node {
   std::vector<std::string> output_fields_;
   std::vector<std::string> input_topics_;
   std::vector<std::string> input_transport_hints_;
+  bool feature_calibration_enable_{false};
+  std::string feature_calibration_mode_{"distribution"};
+  std::string feature_calibration_field_{"reflectivity"};
+  std::vector<std::string> feature_calibration_leading_inputs_;
+  std::vector<std::string> feature_calibration_follower_inputs_;
+  int64_t feature_calibration_samples_per_cloud_{2048};
+  int64_t feature_calibration_window_samples_{100000};
+  int64_t feature_calibration_minimum_samples_{20000};
+  int64_t feature_calibration_quantiles_{64};
+  double feature_calibration_update_interval_sec_{3.0};
+  std::unique_ptr<DistributionFeatureCalibrator> feature_calibrator_;
 
   /**
    * @brief Auto-reconfigurable parameters for dynamic reconfiguration

@@ -22,6 +22,92 @@ __device__ inline void storeUint32Unaligned(uint8_t* destination, unsigned int v
   for (int index = 0; index < 4; ++index) destination[index] = source[index];
 }
 
+template <typename T>
+__device__ inline T loadUnaligned(const uint8_t* source) {
+  T value{};
+  uint8_t* destination = reinterpret_cast<uint8_t*>(&value);
+  for (int index = 0; index < static_cast<int>(sizeof(T)); ++index) destination[index] = source[index];
+  return value;
+}
+
+template <typename T>
+__device__ inline void storeUnaligned(uint8_t* destination, T value) {
+  const uint8_t* source = reinterpret_cast<const uint8_t*>(&value);
+  for (int index = 0; index < static_cast<int>(sizeof(T)); ++index) destination[index] = source[index];
+}
+
+__device__ inline float loadCalibrationValue(const uint8_t* source, int datatype) {
+  switch (datatype) {
+    case 1:
+      return loadUnaligned<signed char>(source);
+    case 2:
+      return loadUnaligned<unsigned char>(source);
+    case 3:
+      return loadUnaligned<short>(source);
+    case 4:
+      return loadUnaligned<unsigned short>(source);
+    case 5:
+      return static_cast<float>(loadUnaligned<int>(source));
+    case 6:
+      return static_cast<float>(loadUnaligned<unsigned int>(source));
+    case 7:
+      return loadUnaligned<float>(source);
+    case 8:
+      return static_cast<float>(loadUnaligned<double>(source));
+    default:
+      return NAN;
+  }
+}
+
+__device__ inline void storeCalibrationValue(uint8_t* destination, int datatype, float value) {
+  switch (datatype) {
+    case 1:
+      storeUnaligned(destination, static_cast<signed char>(fminf(127.0F, fmaxf(-128.0F, roundf(value)))));
+      break;
+    case 2:
+      storeUnaligned(destination, static_cast<unsigned char>(fminf(255.0F, fmaxf(0.0F, roundf(value)))));
+      break;
+    case 3:
+      storeUnaligned(destination, static_cast<short>(fminf(32767.0F, fmaxf(-32768.0F, roundf(value)))));
+      break;
+    case 4:
+      storeUnaligned(destination, static_cast<unsigned short>(fminf(65535.0F, fmaxf(0.0F, roundf(value)))));
+      break;
+    case 5:
+      storeUnaligned(destination, static_cast<int>(roundf(value)));
+      break;
+    case 6:
+      storeUnaligned(destination, static_cast<unsigned int>(fmaxf(0.0F, roundf(value))));
+      break;
+    case 7:
+      storeUnaligned(destination, value);
+      break;
+    case 8:
+      storeUnaligned(destination, static_cast<double>(value));
+      break;
+  }
+}
+
+__device__ inline float applyCalibration(const CloudMetadata& meta, float value) {
+  const int count = meta.calibration_knot_count;
+  if (count < 2 || !isfinite(value)) return value;
+  if (value <= meta.calibration_source[0]) return meta.calibration_target[0];
+  if (value >= meta.calibration_source[count - 1]) return meta.calibration_target[count - 1];
+  int lower = 0;
+  int upper = count - 1;
+  while (upper - lower > 1) {
+    const int middle = (lower + upper) / 2;
+    if (value < meta.calibration_source[middle])
+      upper = middle;
+    else
+      lower = middle;
+  }
+  const float span = meta.calibration_source[upper] - meta.calibration_source[lower];
+  if (span <= 0.0F) return meta.calibration_target[upper];
+  const float alpha = (value - meta.calibration_source[lower]) / span;
+  return meta.calibration_target[lower] + alpha * (meta.calibration_target[upper] - meta.calibration_target[lower]);
+}
+
 __device__ inline void transformPointInterpolated(const CloudMetadata& meta,
                                                   unsigned int time_offset,
                                                   float x,
@@ -157,6 +243,14 @@ __global__ void fusedTransformKernel(const uint8_t* input_points,
 
     for (int k = 0; k < op.size; ++k) {
       dst[k] = src[k];
+    }
+  }
+
+  if (meta.calibration_knot_count >= 2 && meta.calibration_source_offset >= 0 && meta.calibration_destination_offset >= 0) {
+    const float value = loadCalibrationValue(point_ptr + meta.calibration_source_offset, meta.calibration_source_datatype);
+    if (isfinite(value)) {
+      storeCalibrationValue(dest_ptr + meta.calibration_destination_offset, meta.calibration_destination_datatype,
+                            applyCalibration(meta, value));
     }
   }
 
@@ -408,7 +502,14 @@ bool CudaTransformContext::addCloud(const uint8_t* input_data,
                                     const float* start_translation,
                                     const float* end_translation,
                                     const float* start_quaternion,
-                                    const float* end_quaternion) {
+                                    const float* end_quaternion,
+                                    int calibration_source_offset,
+                                    int calibration_destination_offset,
+                                    int calibration_source_datatype,
+                                    int calibration_destination_datatype,
+                                    int calibration_knot_count,
+                                    const float* calibration_source,
+                                    const float* calibration_target) {
   if (num_points == 0) return true;
 
   // Compute strided sampling parameters for uniform spatial distribution
@@ -436,6 +537,17 @@ bool CudaTransformContext::addCloud(const uint8_t* input_data,
   meta.time_offset = time_offset;
   meta.max_time_offset = max_time_offset;
   meta.time_rebase_units = time_rebase_units;
+  meta.calibration_source_offset = calibration_source_offset;
+  meta.calibration_destination_offset = calibration_destination_offset;
+  meta.calibration_source_datatype = calibration_source_datatype;
+  meta.calibration_destination_datatype = calibration_destination_datatype;
+  meta.calibration_knot_count = min(calibration_knot_count, kMaxCalibrationKnots);
+  if (meta.calibration_knot_count >= 2 && calibration_source && calibration_target) {
+    memcpy(meta.calibration_source, calibration_source, meta.calibration_knot_count * sizeof(float));
+    memcpy(meta.calibration_target, calibration_target, meta.calibration_knot_count * sizeof(float));
+  } else {
+    meta.calibration_knot_count = 0;
+  }
 
   if (apply_transform) {
     memcpy(meta.rotation, rotation_matrix_host, 9 * sizeof(float));

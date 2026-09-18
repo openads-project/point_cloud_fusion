@@ -308,7 +308,96 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 100.0,                                           // to_value
                                 std::nullopt,                                    // step_value
                                 "Valid range is [0, 100].");                     // additional_constraints
+  this->declareAndLoadParameter(
+      "feature_calibration.enable",
+      feature_calibration_enable_,                                               // name
+      "Continuously align one scalar feature across configured inputs",          // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true);                                                                     // read_only
+  this->declareAndLoadParameter(
+      "feature_calibration.mode",
+      feature_calibration_mode_,                                                 // name
+      "Feature-calibration algorithm",                                           // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true,                                                                      // read_only
+      std::nullopt, std::nullopt, std::nullopt,                                  // from_value, to_value, step_value
+      "Currently supported value: distribution");                                // additional_constraints
+  this->declareAndLoadParameter(
+      "feature_calibration.field",
+      feature_calibration_field_,                                                // name
+      "Scalar point field calibrated by distribution matching",                  // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true);                                                                     // read_only
+  this->declareAndLoadParameter(
+      "feature_calibration.leading_inputs",
+      feature_calibration_leading_inputs_,                                       // name
+      "Input topics whose pooled feature distribution is the unchanged "
+      "reference",                                                               // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true);                                                                     // read_only
+  this->declareAndLoadParameter(
+      "feature_calibration.follower_inputs",
+      feature_calibration_follower_inputs_,                                      // name
+      "Input topics whose feature values are mapped to the leading "
+      "distribution",                                                            // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true);                                                                     // read_only
+  this->declareAndLoadParameter(
+      "feature_calibration.samples_per_cloud",
+      feature_calibration_samples_per_cloud_,                                    // name
+      "Maximum evenly spaced samples collected from each input cloud",           // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true,                                                                      // read_only
+      1,                                                                         // from_value
+      100000,                                                                    // to_value
+      1);                                                                        // step_value
+  this->declareAndLoadParameter(
+      "feature_calibration.window_samples",
+      feature_calibration_window_samples_,                                       // name
+      "Rolling sample capacity per input",                                       // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true,                                                                      // read_only
+      100,                                                                       // from_value
+      10000000,                                                                  // to_value
+      1);                                                                        // step_value
+  this->declareAndLoadParameter(
+      "feature_calibration.minimum_samples",
+      feature_calibration_minimum_samples_,                                      // name
+      "Samples required before publishing a new mapping",                        // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true,                                                                      // read_only
+      100,                                                                       // from_value
+      10000000,                                                                  // to_value
+      1);                                                                        // step_value
+  this->declareAndLoadParameter(
+      "feature_calibration.quantiles",
+      feature_calibration_quantiles_,                                            // name
+      "Number of piecewise-linear quantile intervals",                           // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true,                                                                      // read_only
+      2,                                                                         // from_value
+      64,                                                                        // to_value
+      1);                                                                        // step_value
+  this->declareAndLoadParameter(
+      "feature_calibration.update_interval_sec",
+      feature_calibration_update_interval_sec_,                                  // name
+      "Minimum interval between asynchronous mapping updates",                   // description
+      false,                                                                     // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      true,                                                                      // read_only
+      0.1,                                                                       // from_value
+      3600.0);                                                                   // to_value
   configureOutputStampMode(output_stamp_mode_param_);
+  configureFeatureCalibration();
 
 #ifdef ENABLE_CUDA
   // Keep the CUDA context available even when starting in CPU mode so the
@@ -340,6 +429,8 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
   });
 }
 // clang-format on
+
+PointCloudFusion::~PointCloudFusion() { feature_calibrator_.reset(); }
 
 template <typename T>
 void PointCloudFusion::declareAndLoadParameter(const std::string& name,
@@ -819,6 +910,8 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
     return;
   }
 
+  if (feature_calibrator_) feature_calibrator_->enqueue(msgs);
+
   // Protect runtime-configurable parameter reads against concurrent parameter
   // updates.
   std::shared_lock<std::shared_mutex> config_lock(config_mutex_);
@@ -1077,7 +1170,8 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
         missing_xyz_count_.fetch_add(1, std::memory_order_relaxed);
         skipped_cloud_count_.fetch_add(1, std::memory_order_relaxed);
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                             "Skipping cloud from '%s': %s (missing_xyz_total=%llu, skipped_total=%llu)",
+                             "Skipping cloud from '%s': %s (missing_xyz_total=%llu, "
+                             "skipped_total=%llu)",
                              msgs[i]->header.frame_id.c_str(), layout.inputs[i].rejection_reason.c_str(),
                              static_cast<unsigned long long>(missing_xyz_count_.load()),
                              static_cast<unsigned long long>(skipped_cloud_count_.load()));
@@ -1099,6 +1193,12 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     }
   }
   if (max_capacity == 0) return nullptr;
+
+  const auto calibration_mappings =
+      feature_calibrator_ ? feature_calibrator_->mappings() : std::vector<std::shared_ptr<const FeatureMapping>>(msgs.size());
+  const auto output_calibration_field = std::find_if(layout.fields.begin(), layout.fields.end(), [this](const auto& field) {
+    return field.name == feature_calibration_field_ && field.count == 1;
+  });
 
   auto output = std::make_unique<PointCloudMsg>();
   output->header.frame_id = target_frame_;
@@ -1135,6 +1235,11 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     const auto& msg = msgs[input_index];
     const auto& input = layout.inputs[input_index];
     if (!msg || !input.valid || msg->point_step == 0) continue;
+    const auto mapping = input_index < calibration_mappings.size() ? calibration_mappings[input_index] : nullptr;
+    const auto* input_calibration_field = mapping ? detail::findField(*msg, feature_calibration_field_) : nullptr;
+    const bool calibrate = mapping && input_calibration_field != nullptr && input_calibration_field->count == 1 &&
+                           detail::validField(*input_calibration_field, msg->point_step) &&
+                           output_calibration_field != layout.fields.end();
 
     const bool apply_transform = batch_motion || msg->header.frame_id != target_frame_;
     tf2::Vector3 translation(0.0, 0.0, 0.0);
@@ -1149,7 +1254,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
         rotation = transform.getBasis();
       } catch (const tf2::TransformException& exception) {
         skipped_cloud_count_.fetch_add(1, std::memory_order_relaxed);
-        RCLCPP_ERROR(this->get_logger(), "Cannot transform point cloud from %s to %s: %s (skipped_total=%llu)",
+        RCLCPP_ERROR(this->get_logger(),
+                     "Cannot transform point cloud from %s to %s: %s "
+                     "(skipped_total=%llu)",
                      msg->header.frame_id.c_str(), target_frame_.c_str(), exception.what(),
                      static_cast<unsigned long long>(skipped_cloud_count_.load()));
         continue;
@@ -1211,6 +1318,14 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
                                     chosen_stamp, motion_compensation_time_scale_sec_);
         storeUint32(destination, static_cast<std::size_t>(output_time_offset), output_time);
       }
+      if (calibrate) {
+        float value = 0.0F;
+        if (readScalarField(byteOffset(source, input_calibration_field->offset), input_calibration_field->datatype,
+                            msg->is_bigendian, value)) {
+          writeScalarField(byteOffset(destination, output_calibration_field->offset), output_calibration_field->datatype,
+                           output->is_bigendian, mapping->apply(value));
+        }
+      }
       destination = byteOffset(destination, layout.point_step);
       ++valid_point_count;
     }
@@ -1267,6 +1382,59 @@ void PointCloudFusion::configureOutputStampMode(const std::string& mode) {
     RCLCPP_WARN(this->get_logger(), "Invalid output_stamp_mode '%s'; defaulting to 'earliest'.", mode.c_str());
     output_stamp_mode_ = OutputStampMode::Earliest;
   }
+}
+
+void PointCloudFusion::configureFeatureCalibration() {
+  if (!feature_calibration_enable_) return;
+  std::string mode = feature_calibration_mode_;
+  std::transform(mode.begin(), mode.end(), mode.begin(),
+                 [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+  if (mode != "distribution") {
+    throw std::invalid_argument("feature_calibration.mode must be 'distribution'");
+  }
+  if (!detail::fieldIsPublished(output_fields_, feature_calibration_field_)) {
+    throw std::invalid_argument("feature_calibration.field must be included in output_fields");
+  }
+  const auto indices = [this](const std::vector<std::string>& topics, const char* role) {
+    std::vector<std::size_t> result;
+    for (const auto& topic : topics) {
+      const auto it = std::find(input_topics_.begin(), input_topics_.end(), topic);
+      if (it == input_topics_.end()) {
+        RCLCPP_FATAL(this->get_logger(), "Feature-calibration %s topic '%s' is not present in input_topics", role, topic.c_str());
+        throw std::invalid_argument("feature calibration topic is not an input");
+      }
+      result.push_back(static_cast<std::size_t>(it - input_topics_.begin()));
+    }
+    return result;
+  };
+  auto leaders = indices(feature_calibration_leading_inputs_, "leader");
+  auto followers = indices(feature_calibration_follower_inputs_, "follower");
+  if (feature_calibration_field_.empty() || leaders.empty() || followers.empty()) {
+    throw std::invalid_argument("enabled feature calibration requires a field, leading_inputs, and follower_inputs");
+  }
+  for (const auto follower : followers) {
+    if (std::find(leaders.begin(), leaders.end(), follower) != leaders.end()) {
+      throw std::invalid_argument("an input cannot be both a feature-calibration leader and follower");
+    }
+  }
+  if (feature_calibration_minimum_samples_ > feature_calibration_window_samples_) {
+    throw std::invalid_argument("feature_calibration.minimum_samples must not exceed window_samples");
+  }
+  DistributionFeatureCalibrator::Config config;
+  config.field = feature_calibration_field_;
+  config.leaders = std::move(leaders);
+  config.followers = std::move(followers);
+  config.input_count = input_topics_.size();
+  config.samples_per_cloud = static_cast<std::size_t>(feature_calibration_samples_per_cloud_);
+  config.window_samples = static_cast<std::size_t>(feature_calibration_window_samples_);
+  config.minimum_samples = static_cast<std::size_t>(feature_calibration_minimum_samples_);
+  config.quantile_count = static_cast<std::size_t>(feature_calibration_quantiles_);
+  config.update_interval_sec = feature_calibration_update_interval_sec_;
+  feature_calibrator_ = std::make_unique<DistributionFeatureCalibrator>(
+      std::move(config), [this](const std::string& message) { RCLCPP_INFO(this->get_logger(), "%s", message.c_str()); });
+  RCLCPP_INFO(this->get_logger(), "Asynchronous distribution calibration enabled for field '%s' (%zu leaders, %zu followers)",
+              feature_calibration_field_.c_str(), feature_calibration_leading_inputs_.size(),
+              feature_calibration_follower_inputs_.size());
 }
 
 void PointCloudFusion::validateInputTopicsParameter() const {
@@ -1334,10 +1502,25 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "CUDA: omitting incompatible same-name field '%s'",
                          name.c_str());
   }
+  const auto calibration_mappings =
+      feature_calibrator_ ? feature_calibrator_->mappings() : std::vector<std::shared_ptr<const FeatureMapping>>(msgs.size());
+  const auto output_calibration_field =
+      std::find_if(output_layout.fields.begin(), output_layout.fields.end(),
+                   [this](const auto& field) { return field.name == feature_calibration_field_ && field.count == 1; });
+  const bool has_active_calibration = output_calibration_field != output_layout.fields.end() &&
+                                      std::any_of(calibration_mappings.begin(), calibration_mappings.end(),
+                                                  [](const auto& mapping) { return mapping != nullptr; });
+  // A private FLOAT32 slot preserves a follower feature even when its ROS
+  // datatype differs from the output datatype (for example Aeva FLOAT32 to
+  // Ouster UINT16 reflectivity). It is consumed by the CUDA kernel and never
+  // appears in the published layout.
+  const std::size_t calibration_scratch_offset = processing_layout.point_step;
+  const std::size_t processing_point_step = processing_layout.point_step + (has_active_calibration ? sizeof(float) : 0U);
 
-  // Heterogeneous clouds are packed into the common output layout on the host.
-  // The existing coalesced CUDA transform/filter kernel then sees identical
-  // slots. Homogeneous all-field batches retain the original zero-copy host path.
+  // Heterogeneous clouds are packed into one processing layout on the host.
+  // It may contain a private time field used by motion compensation. The CUDA
+  // kernel writes the published layout directly, avoiding a second full-cloud
+  // compaction pass when that private field is not published.
   std::vector<std::vector<uint8_t>> packed(msgs.size());
   std::vector<const uint8_t*> input_data(msgs.size(), nullptr);
   std::vector<std::size_t> point_counts(msgs.size(), 0);
@@ -1358,16 +1541,30 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     source_time_offsets[i] = input.time_offset;
     point_counts[i] = std::min(static_cast<std::size_t>(msg->width) * msg->height, msg->data.size() / msg->point_step);
     max_points = std::max(max_points, point_counts[i]);
-    if (input.whole_point_copy) {
+    if (input.whole_point_copy && !has_active_calibration) {
       input_data[i] = msg->data.data();
       continue;
     }
-    packed[i].assign(point_counts[i] * processing_layout.point_step, 0);
+    packed[i].assign(point_counts[i] * processing_point_step, 0);
+    const auto mapping = i < calibration_mappings.size() ? calibration_mappings[i] : nullptr;
+    const auto* calibration_field = mapping ? detail::findField(*msg, feature_calibration_field_) : nullptr;
+    const bool pack_calibration =
+        calibration_field != nullptr && calibration_field->count == 1 && detail::validField(*calibration_field, msg->point_step);
     for (std::size_t point = 0; point < point_counts[i]; ++point) {
       const uint8_t* source = byteOffset(msg->data.data(), point * msg->point_step);
-      uint8_t* destination = byteOffset(packed[i].data(), point * processing_layout.point_step);
-      for (const auto& copy : input.copies) {
-        std::memcpy(byteOffset(destination, copy.destination_offset), byteOffset(source, copy.source_offset), copy.byte_length);
+      uint8_t* destination = byteOffset(packed[i].data(), point * processing_point_step);
+      if (input.whole_point_copy) {
+        std::memcpy(destination, source, processing_layout.point_step);
+      } else {
+        for (const auto& copy : input.copies) {
+          std::memcpy(byteOffset(destination, copy.destination_offset), byteOffset(source, copy.source_offset), copy.byte_length);
+        }
+      }
+      if (pack_calibration) {
+        float value = 0.0F;
+        if (readScalarField(source + calibration_field->offset, calibration_field->datatype, msg->is_bigendian, value)) {
+          std::memcpy(byteOffset(destination, calibration_scratch_offset), &value, sizeof(value));
+        }
       }
     }
     input_data[i] = packed[i].data();
@@ -1407,7 +1604,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       output_time_offset = static_cast<int>(output_field.offset);
     }
   }
-  if (!cuda_context_->resetBatch(total_capacity, max_points, processing_layout.point_step, output_layout.point_step,
+  if (!cuda_context_->resetBatch(total_capacity, max_points, processing_point_step, output_layout.point_step,
                                  static_cast<int>(processing_layout.x_offset), static_cast<int>(processing_layout.y_offset),
                                  static_cast<int>(processing_layout.z_offset), static_cast<int>(output_layout.x_offset),
                                  static_cast<int>(output_layout.y_offset), static_cast<int>(output_layout.z_offset),
@@ -1450,9 +1647,19 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     const auto& motion = motion_transforms[i];
     const int cuda_time_offset = source_time_offsets[i] >= 0 ? packed_time_offset : -1;
     const int64_t time_rebase_units = stampDeltaInTimeUnits(msg->header.stamp, chosen_stamp, motion_compensation_time_scale_sec_);
+    const auto mapping = i < calibration_mappings.size() ? calibration_mappings[i] : nullptr;
+    const auto* input_calibration_field = mapping ? detail::findField(*msg, feature_calibration_field_) : nullptr;
+    const bool calibrate = has_active_calibration && mapping && input_calibration_field != nullptr &&
+                           input_calibration_field->count == 1 && detail::validField(*input_calibration_field, msg->point_step);
     if (!cuda_context_->addCloud(input_data[i], point_counts[i], rotation, translation, apply_transform, i, desired, batch_motion,
                                  cuda_time_offset, motion.max_time_offset, time_rebase_units, motion.start_translation.data(),
-                                 motion.end_translation.data(), motion.start_quaternion.data(), motion.end_quaternion.data())) {
+                                 motion.end_translation.data(), motion.start_quaternion.data(), motion.end_quaternion.data(),
+                                 calibrate ? static_cast<int>(calibration_scratch_offset) : -1,
+                                 calibrate ? static_cast<int>(output_calibration_field->offset) : -1,
+                                 calibrate ? static_cast<int>(sensor_msgs::msg::PointField::FLOAT32) : 0,
+                                 calibrate ? static_cast<int>(output_calibration_field->datatype) : 0,
+                                 calibrate ? static_cast<int>(mapping->source.size()) : 0,
+                                 calibrate ? mapping->source.data() : nullptr, calibrate ? mapping->target.data() : nullptr)) {
       RCLCPP_ERROR(this->get_logger(), "CUDA addCloud failed for input %zu", i);
     }
   }

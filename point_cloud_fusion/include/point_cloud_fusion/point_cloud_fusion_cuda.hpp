@@ -12,6 +12,8 @@
 namespace point_cloud_fusion {
 namespace cuda {
 
+constexpr int kMaxCalibrationKnots = 65;
+
 struct CudaFieldCopy {
   int src_offset;
   int dst_offset;
@@ -34,6 +36,13 @@ struct CloudMetadata {
   float end_translation[3];
   float start_quaternion[4];
   float end_quaternion[4];
+  int calibration_source_offset;
+  int calibration_destination_offset;
+  int calibration_source_datatype;
+  int calibration_destination_datatype;
+  int calibration_knot_count;
+  float calibration_source[kMaxCalibrationKnots];
+  float calibration_target[kMaxCalibrationKnots];
 };
 
 /**
@@ -115,7 +124,14 @@ class CudaTransformContext {
                 const float* start_translation = nullptr,
                 const float* end_translation = nullptr,
                 const float* start_quaternion = nullptr,
-                const float* end_quaternion = nullptr);
+                const float* end_quaternion = nullptr,
+                int calibration_source_offset = -1,
+                int calibration_destination_offset = -1,
+                int calibration_source_datatype = 0,
+                int calibration_destination_datatype = 0,
+                int calibration_knot_count = 0,
+                const float* calibration_source = nullptr,
+                const float* calibration_target = nullptr);
 
   /**
    * @brief Get the accumulated results from the batch
