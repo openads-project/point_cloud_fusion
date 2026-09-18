@@ -99,4 +99,17 @@ TEST(PointCloudLayout, UnionOmitsIncompatibleSameNameFieldDeterministically) {
   EXPECT_EQ(std::count_if(layout.fields.begin(), layout.fields.end(), [](const auto& item) { return item.name == "range"; }), 1);
 }
 
+TEST(PointCloudLayout, AddsHiddenTimeFieldForMotionCompensation) {
+  const std::vector<std::string> requested{"x", "y", "z", "intensity"};
+  const auto processing = point_cloud_fusion::detail::processingFields(requested, "t", true);
+  EXPECT_EQ(processing, (std::vector<std::string>{"x", "y", "z", "intensity", "t"}));
+  EXPECT_FALSE(point_cloud_fusion::detail::fieldIsPublished(requested, "t"));
+}
+
+TEST(PointCloudLayout, DoesNotAddTimeFieldWhenMotionCompensationIsDisabled) {
+  const std::vector<std::string> requested{"x", "y", "z"};
+  EXPECT_EQ(point_cloud_fusion::detail::processingFields(requested, "t", false), requested);
+  EXPECT_TRUE(point_cloud_fusion::detail::processingFields({}, "t", true).empty());
+}
+
 }  // namespace

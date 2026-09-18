@@ -82,6 +82,24 @@ inline uint32_t loadUint32(const uint8_t* data, std::size_t offset) {
   return value;
 }
 
+inline void storeUint32(uint8_t* data, std::size_t offset, uint32_t value) {
+  std::memcpy(byteOffset(data, offset), &value, sizeof(value));
+}
+
+inline int64_t stampDeltaInTimeUnits(const builtin_interfaces::msg::Time& input_stamp,
+                                     const rclcpp::Time& output_stamp,
+                                     double time_scale_sec) {
+  return std::llround((rclcpp::Time(input_stamp) - output_stamp).seconds() / time_scale_sec);
+}
+
+inline uint32_t rebasedTimeOffset(uint32_t input_offset,
+                                  const builtin_interfaces::msg::Time& input_stamp,
+                                  const rclcpp::Time& output_stamp,
+                                  double time_scale_sec) {
+  const int64_t rebased = stampDeltaInTimeUnits(input_stamp, output_stamp, time_scale_sec) + static_cast<int64_t>(input_offset);
+  return static_cast<uint32_t>(std::clamp<int64_t>(rebased, 0, std::numeric_limits<uint32_t>::max()));
+}
+
 /**
  * @brief Store a float in a potentially unaligned byte buffer.
  *
@@ -995,7 +1013,8 @@ bool PointCloudFusion::prepareBatchMotionTransforms(const std::vector<PointCloud
   if (time_field_offsets.size() != msgs.size() ||
       std::any_of(time_field_offsets.begin(), time_field_offsets.end(), [](int offset) { return offset == -1; })) {
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                         "Motion compensation requested, but at least one input lacks a valid UINT32 '%s' field; "
+                         "Motion compensation requested, but at least one "
+                         "input lacks a valid UINT32 '%s' field; "
                          "using rigid transforms for this heterogeneous batch",
                          motion_compensation_time_field_.c_str());
     return false;
@@ -1098,6 +1117,14 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
 
   std::vector<MotionTransform> motion_transforms;
   const bool batch_motion = prepareBatchMotionTransforms(msgs, chosen_stamp, time_offsets, motion_transforms);
+  int output_time_offset = -1;
+  for (const auto& field : layout.fields) {
+    if (field.name == motion_compensation_time_field_ && field.datatype == sensor_msgs::msg::PointField::UINT32 &&
+        field.count == 1) {
+      output_time_offset = static_cast<int>(field.offset);
+      break;
+    }
+  }
   uint8_t* destination = output->data.data();
 
   for (std::size_t input_index = 0; input_index < msgs.size(); ++input_index) {
@@ -1172,6 +1199,14 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       storeFloat(destination, layout.x_offset, transformed_x);
       storeFloat(destination, layout.y_offset, transformed_y);
       storeFloat(destination, layout.z_offset, transformed_z);
+      if (output_time_offset >= 0) {
+        const uint32_t output_time =
+            batch_motion || input.time_offset < 0
+                ? 0U
+                : rebasedTimeOffset(loadUint32(source, static_cast<std::size_t>(input.time_offset)), msg->header.stamp,
+                                    chosen_stamp, motion_compensation_time_scale_sec_);
+        storeUint32(destination, static_cast<std::size_t>(output_time_offset), output_time);
+      }
       destination = byteOffset(destination, layout.point_step);
       ++valid_point_count;
     }
@@ -1279,12 +1314,18 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   valid_point_count = 0;
   if (msgs.empty() || !cuda_context_) return nullptr;
 
-  const detail::BatchLayout layout = detail::buildBatchLayout(msgs, output_fields_, motion_compensation_time_field_);
-  if (layout.point_step == 0) {
+  const bool publish_time_field = detail::fieldIsPublished(output_fields_, motion_compensation_time_field_);
+  const auto processing_fields =
+      detail::processingFields(output_fields_, motion_compensation_time_field_, motion_compensation_enable_);
+  const detail::BatchLayout processing_layout =
+      detail::buildBatchLayout(msgs, processing_fields, motion_compensation_time_field_);
+  const detail::BatchLayout output_layout =
+      publish_time_field ? processing_layout : detail::buildBatchLayout(msgs, output_fields_, motion_compensation_time_field_);
+  if (processing_layout.point_step == 0 || output_layout.point_step == 0) {
     RCLCPP_WARN(this->get_logger(), "CUDA: no input cloud has valid FLOAT32 x/y/z fields; skipping batch");
     return nullptr;
   }
-  for (const auto& name : layout.conflicting_fields) {
+  for (const auto& name : processing_layout.conflicting_fields) {
     incompatible_field_count_.fetch_add(1, std::memory_order_relaxed);
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "CUDA: omitting incompatible same-name field '%s'",
                          name.c_str());
@@ -1300,7 +1341,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   std::size_t max_points = 0;
   for (std::size_t i = 0; i < msgs.size(); ++i) {
     const auto& msg = msgs[i];
-    const auto& input = layout.inputs[i];
+    const auto& input = processing_layout.inputs[i];
     if (!msg || !input.valid || msg->point_step == 0) {
       if (msg) {
         missing_xyz_count_.fetch_add(1, std::memory_order_relaxed);
@@ -1317,10 +1358,10 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       input_data[i] = msg->data.data();
       continue;
     }
-    packed[i].assign(point_counts[i] * layout.point_step, 0);
+    packed[i].assign(point_counts[i] * processing_layout.point_step, 0);
     for (std::size_t point = 0; point < point_counts[i]; ++point) {
       const uint8_t* source = byteOffset(msg->data.data(), point * msg->point_step);
-      uint8_t* destination = byteOffset(packed[i].data(), point * layout.point_step);
+      uint8_t* destination = byteOffset(packed[i].data(), point * processing_layout.point_step);
       for (const auto& copy : input.copies) {
         std::memcpy(byteOffset(destination, copy.destination_offset), byteOffset(source, copy.source_offset), copy.byte_length);
       }
@@ -1333,31 +1374,43 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   if (max_points == 0) return nullptr;
 
   int packed_time_offset = -1;
-  for (const auto& field : layout.fields) {
+  for (const auto& field : processing_layout.fields) {
     if (field.name == motion_compensation_time_field_ && field.datatype == sensor_msgs::msg::PointField::UINT32 &&
         field.count == 1) {
       packed_time_offset = static_cast<int>(field.offset);
       break;
     }
   }
-  if (packed_time_offset < 0) {
-    for (std::size_t i = 0; i < source_time_offsets.size(); ++i) {
-      if (source_time_offsets[i] >= 0) source_time_offsets[i] = -1;
-    }
-  }
-
   const rclcpp::Time chosen_stamp = outputStamp(timing);
   std::vector<MotionTransform> motion_transforms;
   const bool batch_motion = prepareBatchMotionTransforms(msgs, chosen_stamp, source_time_offsets, motion_transforms);
   const std::size_t total_capacity = max_points * msgs.size();
-  std::vector<cuda::CudaFieldCopy> copy_plan{{0, 0, static_cast<int>(layout.point_step)}};
-  if (!cuda_context_->resetBatch(
-          total_capacity, max_points, layout.point_step, layout.point_step, static_cast<int>(layout.x_offset),
-          static_cast<int>(layout.y_offset), static_cast<int>(layout.z_offset), static_cast<int>(layout.x_offset),
-          static_cast<int>(layout.y_offset), static_cast<int>(layout.z_offset), copy_plan,
-          static_cast<float>(range_limits_x_min_), static_cast<float>(range_limits_x_max_),
-          static_cast<float>(range_limits_y_min_), static_cast<float>(range_limits_y_max_),
-          static_cast<float>(range_limits_z_min_), static_cast<float>(range_limits_z_max_), range_limits_enable_)) {
+  int output_time_offset = -1;
+  std::vector<cuda::CudaFieldCopy> copy_plan;
+  copy_plan.reserve(output_layout.fields.size());
+  for (const auto& output_field : output_layout.fields) {
+    const auto source = std::find_if(
+        processing_layout.fields.begin(), processing_layout.fields.end(),
+        [&output_field](const auto& field) { return field.name == output_field.name && detail::sameType(field, output_field); });
+    if (source == processing_layout.fields.end()) {
+      RCLCPP_ERROR(this->get_logger(), "CUDA: output field '%s' is absent from processing layout", output_field.name.c_str());
+      return nullptr;
+    }
+    copy_plan.push_back({static_cast<int>(source->offset), static_cast<int>(output_field.offset),
+                         static_cast<int>(detail::fieldDatatypeSize(output_field.datatype) * output_field.count)});
+    if (output_field.name == motion_compensation_time_field_ && output_field.datatype == sensor_msgs::msg::PointField::UINT32 &&
+        output_field.count == 1) {
+      output_time_offset = static_cast<int>(output_field.offset);
+    }
+  }
+  if (!cuda_context_->resetBatch(total_capacity, max_points, processing_layout.point_step, output_layout.point_step,
+                                 static_cast<int>(processing_layout.x_offset), static_cast<int>(processing_layout.y_offset),
+                                 static_cast<int>(processing_layout.z_offset), static_cast<int>(output_layout.x_offset),
+                                 static_cast<int>(output_layout.y_offset), static_cast<int>(output_layout.z_offset),
+                                 output_time_offset, copy_plan, static_cast<float>(range_limits_x_min_),
+                                 static_cast<float>(range_limits_x_max_), static_cast<float>(range_limits_y_min_),
+                                 static_cast<float>(range_limits_y_max_), static_cast<float>(range_limits_z_min_),
+                                 static_cast<float>(range_limits_z_max_), range_limits_enable_)) {
     RCLCPP_ERROR(this->get_logger(), "CUDA resetBatch failed for heterogeneous layout");
     return nullptr;
   }
@@ -1391,8 +1444,10 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     }
     const int desired = fixed_points_per_input_cloud_ > 0 ? static_cast<int>(fixed_points_per_input_cloud_) : 0;
     const auto& motion = motion_transforms[i];
+    const int cuda_time_offset = source_time_offsets[i] >= 0 ? packed_time_offset : -1;
+    const int64_t time_rebase_units = stampDeltaInTimeUnits(msg->header.stamp, chosen_stamp, motion_compensation_time_scale_sec_);
     if (!cuda_context_->addCloud(input_data[i], point_counts[i], rotation, translation, apply_transform, i, desired, batch_motion,
-                                 packed_time_offset, motion.max_time_offset, motion.start_translation.data(),
+                                 cuda_time_offset, motion.max_time_offset, time_rebase_units, motion.start_translation.data(),
                                  motion.end_translation.data(), motion.start_quaternion.data(), motion.end_quaternion.data())) {
       RCLCPP_ERROR(this->get_logger(), "CUDA addCloud failed for input %zu", i);
     }
@@ -1402,9 +1457,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   output->header.frame_id = target_frame_;
   output->header.stamp = chosen_stamp;
   output->height = 1;
-  output->is_bigendian = layout.is_bigendian;
-  output->point_step = layout.point_step;
-  output->fields = layout.fields;
+  output->is_bigendian = output_layout.is_bigendian;
+  output->point_step = output_layout.point_step;
+  output->fields = output_layout.fields;
   output->is_dense = true;
   if (!cuda_context_->getBatchOutput(output->data, valid_point_count) || valid_point_count == 0) return nullptr;
   output->width = valid_point_count;

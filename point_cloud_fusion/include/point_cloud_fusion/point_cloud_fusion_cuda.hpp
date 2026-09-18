@@ -29,6 +29,7 @@ struct CloudMetadata {
   int motion_compensation;
   int time_offset;
   unsigned int max_time_offset;
+  int64_t time_rebase_units;
   float start_translation[3];
   float end_translation[3];
   float start_quaternion[4];
@@ -77,6 +78,7 @@ class CudaTransformContext {
                   int dst_x_offset,
                   int dst_y_offset,
                   int dst_z_offset,
+                  int dst_time_offset,
                   const std::vector<CudaFieldCopy>& copy_plan,
                   float x_min,
                   float x_max,
@@ -109,6 +111,7 @@ class CudaTransformContext {
                 bool motion_compensation = false,
                 int time_offset = -1,
                 unsigned int max_time_offset = 0,
+                int64_t time_rebase_units = 0,
                 const float* start_translation = nullptr,
                 const float* end_translation = nullptr,
                 const float* start_quaternion = nullptr,
@@ -157,6 +160,7 @@ class CudaTransformContext {
   int current_dst_x_offset_;
   int current_dst_y_offset_;
   int current_dst_z_offset_;
+  int current_dst_time_offset_;
   float current_x_min_;
   float current_x_max_;
   float current_y_min_;

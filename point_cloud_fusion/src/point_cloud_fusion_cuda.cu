@@ -17,6 +17,11 @@ __device__ inline unsigned int loadUint32Unaligned(const uint8_t* source) {
   return value;
 }
 
+__device__ inline void storeUint32Unaligned(uint8_t* destination, unsigned int value) {
+  const uint8_t* source = reinterpret_cast<const uint8_t*>(&value);
+  for (int index = 0; index < 4; ++index) destination[index] = source[index];
+}
+
 __device__ inline void transformPointInterpolated(const CloudMetadata& meta,
                                                   unsigned int time_offset,
                                                   float x,
@@ -64,6 +69,7 @@ __global__ void fusedTransformKernel(const uint8_t* input_points,
                                      int dst_x_offset,
                                      int dst_y_offset,
                                      int dst_z_offset,
+                                     int dst_time_offset,
                                      float x_min,
                                      float x_max,
                                      float y_min,
@@ -165,6 +171,16 @@ __global__ void fusedTransformKernel(const uint8_t* input_points,
   for (int k = 0; k < 4; ++k) x_dst[k] = x_src[k];
   for (int k = 0; k < 4; ++k) y_dst[k] = y_src[k];
   for (int k = 0; k < 4; ++k) z_dst[k] = z_src[k];
+
+  if (dst_time_offset >= 0 && meta.time_offset >= 0) {
+    unsigned int output_time = 0;
+    if (!meta.motion_compensation) {
+      const long long rebased =
+          meta.time_rebase_units + static_cast<long long>(loadUint32Unaligned(point_ptr + meta.time_offset));
+      output_time = rebased <= 0 ? 0U : rebased >= 0xFFFFFFFFLL ? 0xFFFFFFFFU : static_cast<unsigned int>(rebased);
+    }
+    storeUint32Unaligned(dest_ptr + dst_time_offset, output_time);
+  }
 }
 
 // Helper function to check CUDA errors (for functions that can return bool)
@@ -211,6 +227,7 @@ CudaTransformContext::CudaTransformContext()
       current_dst_x_offset_(0),
       current_dst_y_offset_(0),
       current_dst_z_offset_(0),
+      current_dst_time_offset_(-1),
       current_x_min_(-INFINITY),
       current_x_max_(INFINITY),
       current_y_min_(-INFINITY),
@@ -302,6 +319,7 @@ bool CudaTransformContext::resetBatch(size_t total_max_points,
                                       int dst_x_offset,
                                       int dst_y_offset,
                                       int dst_z_offset,
+                                      int dst_time_offset,
                                       const std::vector<CudaFieldCopy>& copy_plan,
                                       float x_min,
                                       float x_max,
@@ -323,6 +341,7 @@ bool CudaTransformContext::resetBatch(size_t total_max_points,
   current_dst_x_offset_ = dst_x_offset;
   current_dst_y_offset_ = dst_y_offset;
   current_dst_z_offset_ = dst_z_offset;
+  current_dst_time_offset_ = dst_time_offset;
   current_x_min_ = x_min;
   current_x_max_ = x_max;
   current_y_min_ = y_min;
@@ -385,6 +404,7 @@ bool CudaTransformContext::addCloud(const uint8_t* input_data,
                                     bool motion_compensation,
                                     int time_offset,
                                     unsigned int max_time_offset,
+                                    int64_t time_rebase_units,
                                     const float* start_translation,
                                     const float* end_translation,
                                     const float* start_quaternion,
@@ -415,6 +435,7 @@ bool CudaTransformContext::addCloud(const uint8_t* input_data,
   meta.motion_compensation = motion_compensation ? 1 : 0;
   meta.time_offset = time_offset;
   meta.max_time_offset = max_time_offset;
+  meta.time_rebase_units = time_rebase_units;
 
   if (apply_transform) {
     memcpy(meta.rotation, rotation_matrix_host, 9 * sizeof(float));
@@ -485,7 +506,7 @@ bool CudaTransformContext::getBatchOutput(std::vector<uint8_t>& output_data, siz
       static_cast<CudaFieldCopy*>(d_copy_plan_), num_copy_ops_, static_cast<int>(num_slots_), static_cast<int>(slot_size_points_),
       static_cast<int>(current_input_point_step_), static_cast<int>(current_output_point_step_), current_src_x_offset_,
       current_src_y_offset_, current_src_z_offset_, current_dst_x_offset_, current_dst_y_offset_, current_dst_z_offset_,
-      current_x_min_, current_x_max_, current_y_min_, current_y_max_, current_z_min_, current_z_max_,
+      current_dst_time_offset_, current_x_min_, current_x_max_, current_y_min_, current_y_max_, current_z_min_, current_z_max_,
       current_range_enable_ ? 1 : 0);
 
   CUDA_CHECK(cudaGetLastError());

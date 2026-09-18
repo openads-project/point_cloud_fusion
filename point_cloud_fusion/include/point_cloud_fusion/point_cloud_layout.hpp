@@ -88,7 +88,8 @@ inline bool sameType(const sensor_msgs::msg::PointField& lhs, const sensor_msgs:
  *
  * @param field Field descriptor to validate.
  * @param point_step Size in bytes of one point record.
- * @return True when the datatype and count are valid and the field is in bounds.
+ * @return True when the datatype and count are valid and the field is in
+ * bounds.
  */
 inline bool validField(const sensor_msgs::msg::PointField& field, uint32_t point_step) {
   const auto size = fieldDatatypeSize(field.datatype);
@@ -108,6 +109,28 @@ inline const sensor_msgs::msg::PointField* findField(const sensor_msgs::msg::Poi
   return it == cloud.fields.end() ? nullptr : &*it;
 }
 
+/** Return whether a configured output-field list publishes a field. */
+inline bool fieldIsPublished(const std::vector<std::string>& requested_fields, const std::string& name) {
+  return requested_fields.empty() || std::find(requested_fields.begin(), requested_fields.end(), name) != requested_fields.end();
+}
+
+/**
+ * Build the field list used internally while processing a batch.
+ *
+ * An empty requested list already retains every field. For an explicit list,
+ * append the point-time field when motion compensation needs it internally.
+ */
+inline std::vector<std::string> processingFields(const std::vector<std::string>& requested_fields,
+                                                 const std::string& time_field_name,
+                                                 bool motion_compensation) {
+  if (requested_fields.empty() || !motion_compensation || fieldIsPublished(requested_fields, time_field_name)) {
+    return requested_fields;
+  }
+  auto result = requested_fields;
+  result.push_back(time_field_name);
+  return result;
+}
+
 /**
  * @brief Check whether a field is a valid scalar FLOAT32 XYZ component.
  *
@@ -121,7 +144,8 @@ inline bool validXyzField(const sensor_msgs::msg::PointField* field, uint32_t po
 }
 
 /**
- * @brief Build a common output layout and per-input copy plan for a cloud batch.
+ * @brief Build a common output layout and per-input copy plan for a cloud
+ * batch.
  *
  * Invalid inputs are retained in the result with a rejection reason. Depending
  * on the requested fields and input compatibility, the result either preserves
@@ -215,7 +239,8 @@ inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointClo
   }
 
   // XYZ is part of every valid output even if a configured optional-field list
-  // omitted it. This keeps the PointCloud2 usable and guarantees transformed XYZ.
+  // omitted it. This keeps the PointCloud2 usable and guarantees transformed
+  // XYZ.
   for (const char* name : {"x", "y", "z"}) {
     if (std::none_of(selected.begin(), selected.end(), [name](const auto& field) { return field.name == name; })) {
       selected.push_back(*findField(first, name));
