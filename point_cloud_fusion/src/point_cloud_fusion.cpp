@@ -12,6 +12,7 @@
 #include <limits>
 #include <numeric>
 #include <sstream>
+#include <stdexcept>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -25,6 +26,7 @@
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
 #include <rmw/qos_profiles.h>
+#include <rclcpp/create_timer.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
 RCLCPP_COMPONENTS_REGISTER_NODE(point_cloud_fusion::PointCloudFusion)
 
@@ -310,6 +312,47 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 std::nullopt,                                    // step_value
                                 "Valid range is [0, 100].");                     // additional_constraints
   configureOutputStampMode(output_stamp_mode_param_);
+  this->declareAndLoadParameter("sync_mode", sync_mode_,
+                                "Synchronization policy: approximate (all inputs) or partial (bounded wait)",
+                                false, false, true);
+  this->declareAndLoadParameter("partial_sync.publish_rate_hz", partial_publish_rate_hz_,
+                                "Maximum partial-batch publication rate; must be explicitly set above zero in partial mode",
+                                false, false, true);
+  this->declareAndLoadParameter("partial_sync.timeout_sec", partial_timeout_sec_,
+                                "Collection wait after the first pending input, in node-clock seconds",
+                                false, false, true);
+  this->declareAndLoadParameter("partial_sync.max_age_sec", partial_max_age_sec_,
+                                "Maximum measurement age or future timestamp offset in node-clock seconds",
+                                false, false, true);
+  if (sync_mode_ != "approximate" && sync_mode_ != "partial") {
+    throw std::invalid_argument("sync_mode must be 'approximate' or 'partial'");
+  }
+  if (sync_mode_ == "partial") {
+    const auto valid_seconds = [](double value) {
+      return std::isfinite(value) && value >= 0.0 && value <= std::numeric_limits<int32_t>::max();
+    };
+    if (!valid_seconds(max_time_diff_sec_) || !valid_seconds(partial_timeout_sec_) ||
+        !valid_seconds(partial_max_age_sec_) || partial_max_age_sec_ <= 0.0 ||
+        partial_max_age_sec_ < partial_timeout_sec_ || !std::isfinite(partial_publish_rate_hz_) ||
+        partial_publish_rate_hz_ <= 0.0 || partial_publish_rate_hz_ > 1.0e9 ||
+        1.0 / partial_publish_rate_hz_ > std::numeric_limits<int32_t>::max()) {
+      throw std::invalid_argument(
+          "Partial sync requires finite non-negative durations, max_age_sec > 0 and >= timeout_sec, "
+          "and an explicit positive publish_rate_hz with a representable nanosecond period");
+    }
+    if (output_stamp_mode_ == OutputStampMode::Input0) {
+      throw std::invalid_argument(
+          "output_stamp_mode 'input0' requires every batch to contain input 0; "
+          "use earliest, latest, or mean with partial sync");
+    }
+    const auto to_ns = [](double seconds) {
+      return std::chrono::duration_cast<PartialCollector::Time>(std::chrono::duration<double>(seconds));
+    };
+    // Round the period up so nanosecond quantization cannot exceed the rate cap.
+    const auto interval = PartialCollector::Time(static_cast<int64_t>(std::ceil(1.0e9 / partial_publish_rate_hz_)));
+    partial_collector_ = std::make_unique<PartialCollector>(input_topics_.size(), PartialCollector::Options{
+        to_ns(max_time_diff_sec_), to_ns(partial_timeout_sec_), to_ns(partial_max_age_sec_), interval});
+  }
 
 #ifdef ENABLE_CUDA
   // Keep the CUDA context available even when starting in CPU mode so the
@@ -670,6 +713,17 @@ void PointCloudFusion::setup() {
                 input_transport_hints_.size(), input_topics_.size(), kDefaultTransportHint);
   }
 
+  // Create the publisher before enabling input callbacks.
+  point_cloud_transport::PointCloudTransport pct(this->shared_from_this());
+  std::string point_cloud_topic_name = this->get_node_topics_interface()->resolve_topic_name("~/point_cloud");
+  cloud_publisher_ = std::make_shared<point_cloud_transport::Publisher>(
+      pct.advertise(point_cloud_topic_name, static_cast<uint32_t>(output_queue_size_)));
+  RCLCPP_INFO(this->get_logger(), "Publishing to '%s'", cloud_publisher_->getTopic().c_str());
+
+  if (partial_collector_) {
+    partial_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  }
+
   // create subscribers
   cloud_subscribers_.clear();
   cloud_subscriber_callback_groups_.clear();
@@ -682,24 +736,33 @@ void PointCloudFusion::setup() {
                                  ? input_transport_hints_[i]
                                  : std::string(kDefaultTransportHint);
 
-    auto callback_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    auto callback_group = partial_callback_group_ ? partial_callback_group_
+                                                  : this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     rclcpp::SubscriptionOptions subscription_options;
     subscription_options.callback_group = callback_group;
 
     auto subscriber = std::make_shared<point_cloud_transport::SubscriberFilter>();
-    subscriber->subscribe(this->shared_from_this(), resolved, hint, rmw_qos_profile_default, subscription_options);
+    const auto& qos = partial_collector_ ? rmw_qos_profile_sensor_data : rmw_qos_profile_default;
+    subscriber->subscribe(this->shared_from_this(), resolved, hint, qos, subscription_options);
+    if (partial_collector_) {
+      subscriber->registerCallback([this, i](const PointCloudMsg::ConstSharedPtr msg) { receivePartialInput(i, msg); });
+    }
     RCLCPP_INFO(this->get_logger(), "Subscribed to '%s' (hint=%s)", subscriber->getTopic().c_str(), hint.c_str());
     cloud_subscriber_callback_groups_.push_back(std::move(callback_group));
     cloud_subscribers_.push_back(std::move(subscriber));
   }
 
-  RCLCPP_INFO(this->get_logger(), "Configured %zu input subscriber callback groups for %zu input topics",
-              cloud_subscriber_callback_groups_.size(), input_topics_.size());
+  RCLCPP_INFO(this->get_logger(), "Configured %zu input topics (%s callback groups)", input_topics_.size(),
+              partial_collector_ ? "shared" : "per-topic");
 
   synchronizer_.reset();
 
   // configure synchronization or direct passthrough
-  if (cloud_subscribers_.size() == 1) {
+  if (partial_collector_) {
+    RCLCPP_INFO(this->get_logger(),
+                "Configured partial synchronization (max_rate=%.3f Hz, wait=%.3f s, max_age=%.3f s, max_dt=%.3f s)",
+                partial_publish_rate_hz_, partial_timeout_sec_, partial_max_age_sec_, max_time_diff_sec_);
+  } else if (cloud_subscribers_.size() == 1) {
     cloud_subscribers_.front()->registerCallback([this](const PointCloudMsg::ConstSharedPtr msg) {
       std::vector<PointCloudMsg::ConstSharedPtr> batch;
       batch.reserve(1);
@@ -740,13 +803,6 @@ void PointCloudFusion::setup() {
     }
   }
 
-  // create publisher
-  point_cloud_transport::PointCloudTransport pct(this->shared_from_this());
-  std::string point_cloud_topic_name = this->get_node_topics_interface()->resolve_topic_name("~/point_cloud");
-  cloud_publisher_ = std::make_shared<point_cloud_transport::Publisher>(
-      pct.advertise(point_cloud_topic_name, static_cast<uint32_t>(output_queue_size_)));
-  RCLCPP_INFO(this->get_logger(), "Publishing to '%s'", cloud_publisher_->getTopic().c_str());
-
   // Annotate message links for tracing: Each publisher (for raw and compressed
   // point clouds) depends an all input point clouds.
   std::vector<const void*> link_subs;
@@ -764,6 +820,52 @@ void PointCloudFusion::setup() {
     }
   }
   TRACETOOLS_TRACEPOINT(message_link_partial_sync, link_subs.data(), link_subs.size(), link_pubs.data(), link_pubs.size());
+}
+
+void PointCloudFusion::receivePartialInput(std::size_t topic_index, PointCloudMsg::ConstSharedPtr msg) {
+  if (!msg) {
+    return;
+  }
+  const auto stamp = PartialCollector::Time(rclcpp::Time(msg->header.stamp).nanoseconds());
+  if (!partial_collector_->push(topic_index, stamp, PartialCollector::Time(this->now().nanoseconds()), msg)) {
+    RCLCPP_DEBUG(this->get_logger(), "Rejected stale, duplicate, or reordered input on '%s'", input_topics_[topic_index].c_str());
+  }
+  schedulePartialFusion();
+}
+
+void PointCloudFusion::schedulePartialFusion() {
+  const auto due = partial_collector_->deadline();
+  if (due == partial_deadline_) {
+    return;
+  }
+  if (partial_timer_) {
+    partial_timer_->cancel();
+  }
+  partial_deadline_ = due;
+  if (!due) {
+    return;
+  }
+  const auto delay = std::max(*due - PartialCollector::Time(this->now().nanoseconds()), PartialCollector::Time(1));
+  partial_timer_ = rclcpp::create_timer(
+      this, this->get_clock(), rclcpp::Duration(delay), [this]() { processPartialBatch(); }, partial_callback_group_);
+}
+
+void PointCloudFusion::processPartialBatch() {
+  // Use the ROS clock for deadlines and freshness: paused simulation pauses
+  // collection, and replay speed does not change synchronization behavior.
+  partial_timer_->cancel();
+  partial_deadline_.reset();
+  const auto batch = partial_collector_->take(PartialCollector::Time(this->now().nanoseconds()));
+  if (!batch.empty()) {
+    std::vector<PointCloudMsg::ConstSharedPtr> msgs;
+    msgs.reserve(batch.size());
+    for (const auto& sample : batch) {
+      msgs.push_back(sample.message);
+    }
+    RCLCPP_DEBUG(this->get_logger(), "Partial batch contains %zu/%zu configured inputs", msgs.size(), input_topics_.size());
+    handleSynchronizedPointClouds(msgs);
+  }
+  schedulePartialFusion();
 }
 
 template <std::size_t N>
@@ -1382,6 +1484,9 @@ void PointCloudFusion::publishFusedCloud(PointCloudMsg::UniquePtr cloud,
   // Publish the fused cloud and emit a compact timing summary for
   // observability.
   cloud_publisher_->publish(std::move(cloud));
+  if (partial_collector_) {
+    partial_collector_->published(PartialCollector::Time(this->now().nanoseconds()));
+  }
   const auto publish_end = std::chrono::steady_clock::now();
 
   const double prep_duration_ms = std::chrono::duration<double, std::milli>(processing_start - callback_start).count();

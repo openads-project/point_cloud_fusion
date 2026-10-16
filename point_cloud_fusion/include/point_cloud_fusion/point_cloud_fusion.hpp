@@ -28,6 +28,7 @@
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
 #include <point_cloud_fusion/motion_compensation.hpp>
+#include <point_cloud_fusion/partial_batch_collector.hpp>
 
 #ifdef ENABLE_CUDA
 #include <point_cloud_fusion/point_cloud_fusion_cuda.hpp>
@@ -112,6 +113,25 @@ class PointCloudFusion : public rclcpp::Node {
   void setupSynchronizer();
 
   using PointCloudMsg = sensor_msgs::msg::PointCloud2;
+  using PartialCollector = PartialBatchCollector<PointCloudMsg::ConstSharedPtr>;
+
+  /**
+   * @brief Update a partial batch without moving its collection deadline.
+   *
+   * @param topic_index Index of the configured input topic.
+   * @param msg Received point cloud.
+   */
+  void receivePartialInput(std::size_t topic_index, PointCloudMsg::ConstSharedPtr msg);
+
+  /**
+   * @brief Arm a ROS-clock timer for the collection/rate-limit deadline.
+   */
+  void schedulePartialFusion();
+
+  /**
+   * @brief Finalize and fuse the newest compatible subset when eligible.
+   */
+  void processPartialBatch();
 
   /**
    * @brief Timing metadata for one synchronized fusion batch.
@@ -244,6 +264,10 @@ class PointCloudFusion : public rclcpp::Node {
   /**
    * @brief ROS parameters
    */
+  std::string sync_mode_ = "approximate";
+  double partial_publish_rate_hz_ = 0.0;
+  double partial_timeout_sec_ = 0.01;
+  double partial_max_age_sec_ = 0.2;
   double max_time_diff_sec_ = 0.05;  // 50 ms default window
   double age_penalty_ = 0.1;         // Matches message_filters::ApproximateTime default
   int64_t sync_queue_size_ = 3;      // queue size for synchronizer
@@ -281,6 +305,17 @@ class PointCloudFusion : public rclcpp::Node {
   std::vector<std::shared_ptr<point_cloud_transport::SubscriberFilter>> cloud_subscribers_;
   std::vector<rclcpp::CallbackGroup::SharedPtr> cloud_subscriber_callback_groups_;
   std::shared_ptr<void> synchronizer_;
+
+  /**
+   * @brief Partial synchronization state, callback group, and deadline timer.
+   *
+   * Partial input callbacks and their timer share one mutually exclusive group.
+   * This serializes collector state, fusion, and publication without extra locks.
+   */
+  std::unique_ptr<PartialCollector> partial_collector_;
+  rclcpp::CallbackGroup::SharedPtr partial_callback_group_;
+  rclcpp::TimerBase::SharedPtr partial_timer_;
+  std::optional<PartialCollector::Time> partial_deadline_;
 
   /**
    * @brief Callback handle for dynamic parameter reconfiguration

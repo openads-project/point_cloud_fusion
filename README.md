@@ -17,7 +17,9 @@
 
 This repository provides a ROS 2 point cloud fusion node. The node subscribes to multiple `sensor_msgs/msg/PointCloud2` streams, transforms them into a common target frame, and publishes one fused point cloud through `point_cloud_transport`.
 
-The package supports CPU processing and optional CUDA accelerated fusion.
+The package supports CPU processing, optional CUDA accelerated fusion, and
+[partial synchronization](point_cloud_fusion/README.md#synchronization) for sensors
+with different scan rates or missing scans.
 
 <p align="center">
   <strong>🚀 <a href="#-quick-start">Quick Start</a></strong> • <strong>💻 <a href="#-development">Development</a></strong> • <strong>📝 <a href="#-documentation">Documentation</a></strong>

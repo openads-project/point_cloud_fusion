@@ -162,6 +162,11 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 
   find_package(ament_cmake_gtest REQUIRED)
+  find_package(rosgraph_msgs REQUIRED)
+  ament_add_gtest(test_synchronization test/test_synchronization.cpp TIMEOUT 60)
+  target_link_libraries(test_synchronization ${TARGET_NAME})
+  ament_target_dependencies(test_synchronization rosgraph_msgs)
+
   ament_add_gtest(test_motion_compensation test/test_motion_compensation.cpp)
   target_include_directories(test_motion_compensation PRIVATE include)
 endif()
