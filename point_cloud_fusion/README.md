@@ -41,6 +41,7 @@ flowchart LR
 | `sync_queue_size` | `int` | `3` | Queue depth for approximate-time synchronization |
 | `output_queue_size` | `int` | `10` | Queue depth for the fused output publisher |
 | `output_fields` | `string[]` | `[]` | Fields retained in the fused output; an empty list retains all input fields |
+| `missing_field_fill_values` | `string[]` | `[]` | Missing-field overrides as field=value entries; defaults are NaN for floats and zero for integers |
 | `output_stamp_mode` | `string` | `"earliest"` | Fused timestamp selection: earliest, latest, mean, or input0 |
 | `fixed_points_per_input_cloud` | `int` | `0` | Runtime-reconfigurable maximum valid point count per input cloud; 0 disables the limit |
 | `use_cuda` | `bool` | `true` | Runtime-reconfigurable backend selection; true uses CUDA and false uses CPU |

@@ -4,10 +4,16 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <iterator>
+#include <limits>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -48,6 +54,11 @@ struct FieldCopy {
   std::size_t byte_length{0};
 };
 
+struct FieldFill {
+  uint32_t destination_offset{0};
+  std::vector<uint8_t> bytes;
+};
+
 struct InputLayout {
   bool valid{false};
   uint32_t x_offset{0};
@@ -56,6 +67,7 @@ struct InputLayout {
   int time_offset{-1};
   bool whole_point_copy{false};
   std::vector<FieldCopy> copies;
+  std::vector<FieldFill> field_fills;
   std::vector<std::string> zero_filled_fields;
   std::string rejection_reason;
 };
@@ -68,9 +80,120 @@ struct BatchLayout {
   uint32_t z_offset{0};
   bool homogeneous_fast_path{false};
   bool is_bigendian{false};
+  bool is_dense{true};
+  std::string fill_error;
+  std::vector<std::string> unused_fill_fields;
   std::vector<InputLayout> inputs;
   std::vector<std::string> conflicting_fields;
 };
+
+using MissingFieldFillValues = std::unordered_map<std::string, double>;
+
+/** Parse field=value entries; values may be finite numbers or NaN. */
+inline MissingFieldFillValues parseMissingFieldFillValues(const std::vector<std::string>& entries) {
+  const auto trim = [](const std::string& value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    return first == std::string::npos ? std::string{} : value.substr(first, value.find_last_not_of(" \t\r\n") - first + 1);
+  };
+  MissingFieldFillValues result;
+  for (const auto& entry : entries) {
+    const auto separator = entry.find('=');
+    if (separator == std::string::npos) {
+      throw std::invalid_argument("Expected field=value in missing_field_fill_values: " + entry);
+    }
+    const auto name = trim(entry.substr(0, separator));
+    const auto text = trim(entry.substr(separator + 1));
+    if (name.empty() || text.empty()) throw std::invalid_argument("Empty field or value in missing_field_fill_values: " + entry);
+    double value{};
+    try {
+      std::size_t consumed = 0;
+      value = std::stod(text, &consumed);
+      if (consumed != text.size() || std::isinf(value)) throw std::invalid_argument("invalid value");
+    } catch (const std::exception&) {
+      throw std::invalid_argument("Fill value for '" + name + "' must be a finite number or nan");
+    }
+    if (!result.emplace(name, value).second) {
+      throw std::invalid_argument("Duplicate missing-field fill policy for '" + name + "'");
+    }
+  }
+  return result;
+}
+
+/** Validate and encode one element of a field fill in host byte order. */
+template <typename T>
+inline void encodeFillValue(double value, uint8_t* destination) {
+  T typed{};
+  if constexpr (std::is_integral_v<T>) {
+    if (!std::isfinite(value) || std::trunc(value) != value || value < static_cast<double>(std::numeric_limits<T>::lowest()) ||
+        value > static_cast<double>(std::numeric_limits<T>::max())) {
+      throw std::invalid_argument("fill must be an in-range integer (NaN is only supported for FLOAT32/FLOAT64)");
+    }
+    typed = static_cast<T>(value);
+  } else {
+    if (std::isinf(value) || (std::isfinite(value) && std::abs(value) > std::numeric_limits<T>::max())) {
+      throw std::invalid_argument("fill exceeds the floating-point datatype range");
+    }
+    typed = std::isnan(value) ? std::numeric_limits<T>::quiet_NaN() : static_cast<T>(value);
+  }
+  std::memcpy(destination, &typed, sizeof(typed));
+}
+
+/** Build an endian-correct fill, broadcasting the value to every array element. */
+inline FieldFill makeFieldFill(const sensor_msgs::msg::PointField& field, double value, bool is_bigendian) {
+  FieldFill fill;
+  fill.destination_offset = field.offset;
+  const auto element_size = fieldDatatypeSize(field.datatype);
+  if (element_size == 0 || field.count == 0) throw std::invalid_argument("invalid fill datatype or element count");
+  fill.bytes.resize(element_size * field.count);
+  using F = sensor_msgs::msg::PointField;
+  switch (field.datatype) {
+    case F::INT8:
+      encodeFillValue<int8_t>(value, fill.bytes.data());
+      break;
+    case F::UINT8:
+      encodeFillValue<uint8_t>(value, fill.bytes.data());
+      break;
+    case F::INT16:
+      encodeFillValue<int16_t>(value, fill.bytes.data());
+      break;
+    case F::UINT16:
+      encodeFillValue<uint16_t>(value, fill.bytes.data());
+      break;
+    case F::INT32:
+      encodeFillValue<int32_t>(value, fill.bytes.data());
+      break;
+    case F::UINT32:
+      encodeFillValue<uint32_t>(value, fill.bytes.data());
+      break;
+    case F::FLOAT32:
+      encodeFillValue<float>(value, fill.bytes.data());
+      break;
+    case F::FLOAT64:
+      encodeFillValue<double>(value, fill.bytes.data());
+      break;
+    default:
+      throw std::invalid_argument("unsupported fill datatype");
+  }
+  const uint16_t endian_check = 1;
+  uint8_t first_byte{};
+  std::memcpy(&first_byte, &endian_check, sizeof(first_byte));
+  const bool host_bigendian = first_byte == 0;
+  if (is_bigendian != host_bigendian) {
+    std::reverse(fill.bytes.begin(), std::next(fill.bytes.begin(), static_cast<std::ptrdiff_t>(element_size)));
+  }
+  for (uint32_t element = 1; element < field.count; ++element) {
+    std::copy_n(fill.bytes.cbegin(), element_size,
+                std::next(fill.bytes.begin(), static_cast<std::ptrdiff_t>(element * element_size)));
+  }
+  return fill;
+}
+
+/** Apply configured fills after zero-initializing a destination point. */
+inline void fillMissingFields(uint8_t* destination, const InputLayout& input) {
+  for (const auto& fill : input.field_fills) {
+    std::copy(fill.bytes.begin(), fill.bytes.end(), std::next(destination, fill.destination_offset));
+  }
+}
 
 /**
  * @brief Check whether two fields have the same name and element type.
@@ -154,11 +277,13 @@ inline bool validXyzField(const sensor_msgs::msg::PointField* field, uint32_t po
  * @param clouds Point clouds to validate and combine.
  * @param requested_fields Optional ordered list of fields to include.
  * @param time_field_name Name of the per-point time-offset field.
+ * @param fill_values Overrides; missing floats default to NaN, integers to zero.
  * @return Output layout and copy plan for every input cloud.
  */
 inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointCloud2::ConstSharedPtr>& clouds,
                                     const std::vector<std::string>& requested_fields,
-                                    const std::string& time_field_name) {
+                                    const std::string& time_field_name,
+                                    const MissingFieldFillValues& fill_values = {}) {
   BatchLayout result;
   result.inputs.resize(clouds.size());
 
@@ -178,6 +303,7 @@ inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointClo
       continue;
     }
     input.valid = true;
+    result.is_dense = result.is_dense && cloud->is_dense;
     input.x_offset = x->offset;
     input.y_offset = y->offset;
     input.z_offset = z->offset;
@@ -263,6 +389,7 @@ inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointClo
     if (field.name == "z") result.z_offset = field.offset;
   }
 
+  std::unordered_set<std::string> used_fill_fields;
   for (const auto index : valid_indices) {
     const auto& cloud = *clouds[index];
     auto& input = result.inputs[index];
@@ -272,11 +399,27 @@ inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointClo
       const auto* source = findField(cloud, destination.name);
       if (source != nullptr && sameType(*source, destination) && validField(*source, cloud.point_step)) {
         input.copies.push_back({source->offset, destination.offset, fieldDatatypeSize(source->datatype) * source->count});
+      } else if (const auto fill = fill_values.find(destination.name);
+                 fill != fill_values.end() || destination.datatype == sensor_msgs::msg::PointField::FLOAT32 ||
+                 destination.datatype == sensor_msgs::msg::PointField::FLOAT64) {
+        const double value = fill != fill_values.end() ? fill->second : std::numeric_limits<double>::quiet_NaN();
+        try {
+          input.field_fills.push_back(makeFieldFill(destination, value, result.is_bigendian));
+        } catch (const std::invalid_argument& error) {
+          result.fill_error = "Cannot fill missing field '" + destination.name + "': " + error.what();
+          return result;
+        }
+        if (fill != fill_values.end()) used_fill_fields.insert(destination.name);
+        if (std::isnan(value)) result.is_dense = false;
       } else {
         input.zero_filled_fields.push_back(destination.name);
       }
     }
   }
+  for (const auto& fill : fill_values) {
+    if (used_fill_fields.count(fill.first) == 0U) result.unused_fill_fields.push_back(fill.first);
+  }
+  std::sort(result.unused_fill_fields.begin(), result.unused_fill_fields.end());
   return result;
 }
 

@@ -11,6 +11,7 @@
 #include <optional>
 #include <shared_mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <message_filters/subscriber.h>
@@ -128,6 +129,9 @@ class PointCloudFusion : public rclcpp::Node {
   void setupSynchronizer();
 
   using PointCloudMsg = sensor_msgs::msg::PointCloud2;
+
+  /** Warn, with throttling, about fill overrides unused by the current output layout. */
+  void warnUnusedFillOverrides(const std::vector<std::string>& fields) const;
 
   /**
    * @brief Timing metadata for one synchronized fusion batch.
@@ -292,6 +296,8 @@ class PointCloudFusion : public rclcpp::Node {
   std::string output_stamp_mode_param_ = "earliest";
   std::string target_frame_ = "base_link";
   std::vector<std::string> output_fields_;
+  std::vector<std::string> missing_field_fill_values_;
+  std::unordered_map<std::string, double> missing_field_fills_;
   std::vector<std::string> input_topics_;
   std::vector<std::string> input_transport_hints_;
   bool feature_calibration_enable_ = false;

@@ -34,6 +34,13 @@
     #   - "z"
     #   - "intensity"
     #   - ...
+
+    # Missing floating-point fields default to quiet NaN; integer fields default to zero.
+    # Integer fills must be integral; all fills must fit the datatype (nan is allowed for floats).
+    # Optional field=value exceptions (normally leave unset):
+    # missing_field_fill_values:
+    #   - "intensity=0"
+    #   - "ring=65535"
     output_stamp_mode: "earliest"
     feature_calibration:
       enable: false # Continuously map follower feature distributions to the pooled, unchanged leader distribution

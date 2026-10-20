@@ -166,6 +166,13 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
       false,                                                                     // read_only
       std::nullopt, std::nullopt, std::nullopt,                                  // from_value, to_value, step_value
       "Typical fields include: x, y, z, intensity, t, reflectivity, ring, ambient, range.");  // additional_constraints
+  this->declareAndLoadParameter(
+      "missing_field_fill_values", missing_field_fill_values_,                  // name
+      "Missing-field overrides as field=value entries; defaults are NaN for floats and zero for integers",  // description
+      true,                                                                      // add_to_auto_reconfigurable_params
+      false,                                                                     // is_required
+      false);                                                                    // read_only
+  missing_field_fills_ = detail::parseMissingFieldFillValues(missing_field_fill_values_);
   this->declareAndLoadParameter("output_stamp_mode", output_stamp_mode_param_,   // name
                                 "Fused timestamp selection: earliest, latest, mean, or input0",
                                 false,                                           // add_to_auto_reconfigurable_params
@@ -517,6 +524,7 @@ rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(co
   // Pre-validate interdependent and runtime-sensitive parameters before
   // applying any changes.
   // Build the prospective state: current values overridden by incoming changes.
+  std::optional<detail::MissingFieldFillValues> prospective_fills;
   bool any_range_param = false;
   bool prospective_use_cuda = use_cuda_;
   int64_t prospective_fixed_points_per_input_cloud = fixed_points_per_input_cloud_;
@@ -529,7 +537,16 @@ rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(co
 
   for (const auto& param : parameters) {
     const auto& name = param.get_name();
-    if (name == "fixed_points_per_input_cloud") {
+    if (name == "missing_field_fill_values") {
+      try {
+        prospective_fills = detail::parseMissingFieldFillValues(param.as_string_array());
+      } catch (const std::exception& error) {
+        rcl_interfaces::msg::SetParametersResult result;
+        result.successful = false;
+        result.reason = error.what();
+        return result;
+      }
+    } else if (name == "fixed_points_per_input_cloud") {
       prospective_fixed_points_per_input_cloud = param.as_int();
     } else if (name == "use_cuda") {
       prospective_use_cuda = param.as_bool();
@@ -619,6 +636,7 @@ rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(co
       }
     }
   }
+  if (prospective_fills) missing_field_fills_ = std::move(*prospective_fills);
   if (use_cuda_ != previous_use_cuda) {
     RCLCPP_INFO(this->get_logger(), "Fusion backend switched to %s", use_cuda_ ? "CUDA" : "CPU");
   }
@@ -1142,17 +1160,35 @@ bool PointCloudFusion::prepareBatchMotionTransforms(const std::vector<PointCloud
   return prepared_any;
 }
 
+void PointCloudFusion::warnUnusedFillOverrides(const std::vector<std::string>& fields) const {
+  if (fields.empty()) return;
+  std::ostringstream names;
+  for (std::size_t i = 0; i < fields.size(); ++i) {
+    if (i != 0U) names << ", ";
+    names << fields[i];
+  }
+  RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                       "Ignoring unused missing_field_fill_values entries for this batch: %s (no selected field needs filling)",
+                       names.str().c_str());
+}
+
 PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch(
     const std::vector<PointCloudMsg::ConstSharedPtr>& msgs, const FusionTiming& timing, std::size_t& valid_point_count) const {
   valid_point_count = 0;
   if (msgs.empty()) return nullptr;
 
-  const detail::BatchLayout layout = detail::buildBatchLayout(msgs, output_fields_, motion_compensation_time_field_);
+  const detail::BatchLayout layout =
+      detail::buildBatchLayout(msgs, output_fields_, motion_compensation_time_field_, missing_field_fills_);
+  if (!layout.fill_error.empty()) {
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "%s; skipping batch", layout.fill_error.c_str());
+    return nullptr;
+  }
   if (layout.point_step == 0) {
     missing_xyz_count_.fetch_add(msgs.size(), std::memory_order_relaxed);
     RCLCPP_WARN(this->get_logger(), "No input cloud has valid FLOAT32 x/y/z fields; skipping batch");
     return nullptr;
   }
+  warnUnusedFillOverrides(layout.unused_fill_fields);
 
   if (!layout.conflicting_fields.empty()) {
     incompatible_field_count_.fetch_add(layout.conflicting_fields.size(), std::memory_order_relaxed);
@@ -1211,7 +1247,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   output->is_bigendian = layout.is_bigendian;
   output->point_step = layout.point_step;
   output->fields = layout.fields;
-  output->is_dense = true;
+  output->is_dense = layout.is_dense;
   output->data.resize(max_capacity * layout.point_step);
 
   const bool check_range = range_limits_enable_;
@@ -1306,6 +1342,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
         std::memcpy(destination, source, layout.point_step);
       } else {
         std::memset(destination, 0, layout.point_step);
+        detail::fillMissingFields(destination, input);
         for (const auto& copy : input.copies) {
           std::memcpy(byteOffset(destination, copy.destination_offset), byteOffset(source, copy.source_offset), copy.byte_length);
         }
@@ -1313,12 +1350,11 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       storeFloat(destination, layout.x_offset, transformed_x);
       storeFloat(destination, layout.y_offset, transformed_y);
       storeFloat(destination, layout.z_offset, transformed_z);
-      if (output_time_offset >= 0) {
+      if (output_time_offset >= 0 && input.time_offset >= 0) {
         const uint32_t output_time =
-            batch_motion || input.time_offset < 0
-                ? 0U
-                : rebasedTimeOffset(loadUint32(source, static_cast<std::size_t>(input.time_offset)), msg->header.stamp,
-                                    chosen_stamp, motion_compensation_time_scale_sec_);
+            batch_motion ? 0U
+                         : rebasedTimeOffset(loadUint32(source, static_cast<std::size_t>(input.time_offset)), msg->header.stamp,
+                                             chosen_stamp, motion_compensation_time_scale_sec_);
         storeUint32(destination, static_cast<std::size_t>(output_time_offset), output_time);
       }
       if (calibrate) {
@@ -1492,14 +1528,25 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   const bool publish_time_field = detail::fieldIsPublished(output_fields_, motion_compensation_time_field_);
   const auto processing_fields =
       detail::processingFields(output_fields_, motion_compensation_time_field_, motion_compensation_enable_);
+  auto processing_fills = missing_field_fills_;
+  // Private processing fields are not published, so user output-fill overrides
+  // must not change or invalidate them.
+  if (!publish_time_field) processing_fills.erase(motion_compensation_time_field_);
   const detail::BatchLayout processing_layout =
-      detail::buildBatchLayout(msgs, processing_fields, motion_compensation_time_field_);
+      detail::buildBatchLayout(msgs, processing_fields, motion_compensation_time_field_, processing_fills);
   const detail::BatchLayout output_layout =
-      publish_time_field ? processing_layout : detail::buildBatchLayout(msgs, output_fields_, motion_compensation_time_field_);
+      publish_time_field ? processing_layout
+                         : detail::buildBatchLayout(msgs, output_fields_, motion_compensation_time_field_, missing_field_fills_);
+  if (!processing_layout.fill_error.empty() || !output_layout.fill_error.empty()) {
+    const auto& error = processing_layout.fill_error.empty() ? output_layout.fill_error : processing_layout.fill_error;
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "CUDA: %s; skipping batch", error.c_str());
+    return nullptr;
+  }
   if (processing_layout.point_step == 0 || output_layout.point_step == 0) {
     RCLCPP_WARN(this->get_logger(), "CUDA: no input cloud has valid FLOAT32 x/y/z fields; skipping batch");
     return nullptr;
   }
+  warnUnusedFillOverrides(output_layout.unused_fill_fields);
   for (const auto& name : processing_layout.conflicting_fields) {
     incompatible_field_count_.fetch_add(1, std::memory_order_relaxed);
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "CUDA: omitting incompatible same-name field '%s'",
@@ -1559,6 +1606,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       if (input.whole_point_copy) {
         std::memcpy(destination, source, processing_layout.point_step);
       } else {
+        detail::fillMissingFields(destination, input);
         for (const auto& copy : input.copies) {
           std::memcpy(byteOffset(destination, copy.destination_offset), byteOffset(source, copy.source_offset), copy.byte_length);
         }
@@ -1674,7 +1722,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   output->is_bigendian = output_layout.is_bigendian;
   output->point_step = output_layout.point_step;
   output->fields = output_layout.fields;
-  output->is_dense = true;
+  output->is_dense = output_layout.is_dense;
   if (!cuda_context_->getBatchOutput(output->data, valid_point_count) || valid_point_count == 0) return nullptr;
   output->width = valid_point_count;
   output->row_step = output->point_step * output->width;
