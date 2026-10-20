@@ -209,10 +209,19 @@ __global__ void fusedTransformKernel(const uint8_t* input_points,
   // Skip invalid points
   if (!isfinite(x) || !isfinite(y) || !isfinite(z)) return;
 
+  const unsigned int time_offset =
+      meta.motion_compensation && meta.time_offset >= 0 ? loadUint32Unaligned(point_ptr + meta.time_offset) : 0;
+  const auto& object = meta.object_motion;
+  if (object.velocity_offset >= 0 &&
+      (object.invalid_flags_offset < 0 ||
+       (loadUint32Unaligned(point_ptr + object.invalid_flags_offset) & object.invalid_flags_mask) == 0U)) {
+    const float velocity = loadCalibrationValue(point_ptr + object.velocity_offset, object.velocity_datatype);
+    compensateObjectMotion(object, velocity, time_offset, x, y, z);
+  }
+
   float transformed_x, transformed_y, transformed_z;
 
   if (meta.motion_compensation) {
-    const unsigned int time_offset = meta.time_offset >= 0 ? loadUint32Unaligned(point_ptr + meta.time_offset) : 0;
     transformPointInterpolated(meta, time_offset, x, y, z, transformed_x, transformed_y, transformed_z);
   } else if (meta.apply_transform) {
     transformed_x = meta.rotation[0] * x + meta.rotation[1] * y + meta.rotation[2] * z + meta.translation[0];
@@ -509,7 +518,8 @@ bool CudaTransformContext::addCloud(const uint8_t* input_data,
                                     int calibration_destination_datatype,
                                     int calibration_knot_count,
                                     const float* calibration_source,
-                                    const float* calibration_target) {
+                                    const float* calibration_target,
+                                    const ObjectMotion& object_motion) {
   if (num_points == 0) return true;
 
   // Compute strided sampling parameters for uniform spatial distribution
@@ -537,6 +547,7 @@ bool CudaTransformContext::addCloud(const uint8_t* input_data,
   meta.time_offset = time_offset;
   meta.max_time_offset = max_time_offset;
   meta.time_rebase_units = time_rebase_units;
+  meta.object_motion = object_motion;
   meta.calibration_source_offset = calibration_source_offset;
   meta.calibration_destination_offset = calibration_destination_offset;
   meta.calibration_source_datatype = calibration_source_datatype;

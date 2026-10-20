@@ -12,6 +12,7 @@
 #include <limits>
 #include <numeric>
 #include <sstream>
+#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -76,6 +77,23 @@ inline float loadFloat(const uint8_t* data, std::size_t offset) {
   return value;
 }
 
+/** Read a validated FLOAT32/FLOAT64 velocity without a generic datatype switch on the common native-endian path. */
+inline float loadObjectVelocity(const uint8_t* data, int datatype, bool bigendian) {
+  const uint16_t endian_check = 1;
+  uint8_t first_byte{};
+  std::memcpy(&first_byte, &endian_check, sizeof(first_byte));
+  if (bigendian != (first_byte == 0)) {
+    float value = std::numeric_limits<float>::quiet_NaN();
+    point_cloud_fusion::readScalarField(data, static_cast<uint8_t>(datatype), bigendian, value);
+    return value;
+  }
+  if (datatype == sensor_msgs::msg::PointField::FLOAT32) return loadFloat(data, 0);
+  double value{};
+  std::memcpy(&value, data, sizeof(value));
+  return std::abs(value) <= std::numeric_limits<float>::max() ? static_cast<float>(value)
+                                                              : std::numeric_limits<float>::quiet_NaN();
+}
+
 inline uint32_t loadUint32(const uint8_t* data, std::size_t offset) {
   uint32_t value = 0;
   std::memcpy(&value, byteOffset(data, offset), sizeof(value));
@@ -98,6 +116,20 @@ inline uint32_t rebasedTimeOffset(uint32_t input_offset,
                                   double time_scale_sec) {
   const int64_t rebased = stampDeltaInTimeUnits(input_stamp, output_stamp, time_scale_sec) + static_cast<int64_t>(input_offset);
   return static_cast<uint32_t>(std::clamp<int64_t>(rebased, 0, std::numeric_limits<uint32_t>::max()));
+}
+
+/** Bound TF waits even when simulated ROS time is paused or jumps backwards. */
+template <typename Lookup>
+auto lookupWithWallTimeout(double timeout_sec, const Lookup& lookup) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::duration<double>(timeout_sec);
+  for (;;) {
+    try {
+      return lookup();
+    } catch (const tf2::TransformException&) {
+      if (!rclcpp::ok() || std::chrono::steady_clock::now() >= deadline) throw;
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
 }
 
 /**
@@ -237,6 +269,54 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 1.0,                                             // to_value
                                 std::nullopt,                                    // step_value
                                 "The entire batch falls back to rigid transforms; recovery probes do not wait.");
+  this->declareAndLoadParameter("object_motion_compensation.enable", object_motion_compensation_enable_,  // name
+                                "Advance points to the output timestamp using absolute radial velocity",  // description
+                                true,                                            // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                false);                                          // read_only
+  this->declareAndLoadParameter("object_motion_compensation.velocity_field", object_motion_velocity_field_,  // name
+                                "Scalar FLOAT32/FLOAT64 absolute radial velocity field in m/s",  // description
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true);                                           // read_only
+  this->declareAndLoadParameter("object_motion_compensation.velocity_fields", object_motion_velocity_fields_,  // name
+                                "Optional velocity field per input_topics entry; empty entries disable correction",  // description
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true);                                           // read_only
+  this->declareAndLoadParameter("object_motion_compensation.doppler_sign", object_motion_doppler_sign_,  // name
+                                "1 for increasing-range-positive velocity, -1 for approaching-positive",  // description
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true);                                           // read_only
+  this->declareAndLoadParameter("object_motion_compensation.max_time_offset_sec", object_motion_max_time_offset_sec_,  // name
+                                "Maximum absolute point extrapolation duration [s]",  // description
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true,                                            // read_only
+                                1.0e-6,                                         // from_value
+                                10.0);                                           // to_value
+  this->declareAndLoadParameter("object_motion_compensation.max_speed_mps", object_motion_max_speed_mps_,  // name
+                                "Maximum accepted absolute radial speed [m/s]",  // description
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true,                                            // read_only
+                                1.0e-6,                                         // from_value
+                                1000.0);                                           // to_value
+  this->declareAndLoadParameter("object_motion_compensation.invalid_flags_field", object_motion_invalid_flags_field_,  // name
+                                "Optional UINT32 field containing invalid-velocity flag bits",  // description
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true);                                           // read_only
+  this->declareAndLoadParameter("object_motion_compensation.invalid_flags_mask", object_motion_invalid_flags_mask_,  // name
+                                "Skip object correction when any masked flag is set; zero disables the mask",  // description
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true,                                            // read_only
+                                0,                                               // from_value
+                                4294967295.0,                                    // to_value
+                                1);                                              // step_value
+  validateObjectMotionParameters();
   this->declareAndLoadParameter("range_limits.enable", range_limits_enable_,     // name
                                 "Enable XYZ range filtering after transformation into target_frame",
                                 true,                                            // add_to_auto_reconfigurable_params
@@ -525,6 +605,8 @@ rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(co
   // applying any changes.
   // Build the prospective state: current values overridden by incoming changes.
   std::optional<detail::MissingFieldFillValues> prospective_fills;
+  bool prospective_object_motion = object_motion_compensation_enable_;
+  bool prospective_ego_motion = motion_compensation_enable_;
   bool any_range_param = false;
   bool prospective_use_cuda = use_cuda_;
   int64_t prospective_fixed_points_per_input_cloud = fixed_points_per_input_cloud_;
@@ -546,6 +628,10 @@ rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(co
         result.reason = error.what();
         return result;
       }
+    } else if (name == "object_motion_compensation.enable") {
+      prospective_object_motion = param.as_bool();
+    } else if (name == "motion_compensation.enable") {
+      prospective_ego_motion = param.as_bool();
     } else if (name == "fixed_points_per_input_cloud") {
       prospective_fixed_points_per_input_cloud = param.as_int();
     } else if (name == "use_cuda") {
@@ -569,6 +655,13 @@ rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(co
       prospective_z_max = param.as_double();
       any_range_param = true;
     }
+  }
+
+  if (prospective_object_motion && !prospective_ego_motion) {
+    rcl_interfaces::msg::SetParametersResult result;
+    result.successful = false;
+    result.reason = "object_motion_compensation.enable requires motion_compensation.enable";
+    return result;
   }
 
   if (prospective_fixed_points_per_input_cloud < kMinFixedPointsPerInputCloud ||
@@ -1069,15 +1162,19 @@ bool PointCloudFusion::prepareMotionTransform(const PointCloudMsg& msg,
     }
   }
 
+  // A cloud already expressed in the fixed output frame needs no TF lookup,
+  // even when that frame has no entries in the buffer.
+  if (msg.header.frame_id == target_frame_ && target_frame_ == motion_compensation_fixed_frame_) return true;
+
   const rclcpp::Time scan_start(msg.header.stamp);
   const auto scan_duration =
       rclcpp::Duration::from_seconds(static_cast<double>(transform.max_time_offset) * motion_compensation_time_scale_sec_);
   const rclcpp::Time scan_end = scan_start + scan_duration;
-  const auto timeout = rclcpp::Duration::from_seconds(timeout_sec);
-
   auto lookup_at = [&](const rclcpp::Time& source_stamp) {
-    return tf_buffer_->lookupTransform(target_frame_, reference_stamp, msg.header.frame_id, source_stamp,
-                                       motion_compensation_fixed_frame_, timeout);
+    return lookupWithWallTimeout(timeout_sec, [&] {
+      return tf_buffer_->lookupTransform(target_frame_, reference_stamp, msg.header.frame_id, source_stamp,
+                                         motion_compensation_fixed_frame_, rclcpp::Duration::from_seconds(0.0));
+    });
   };
 
   geometry_msgs::msg::TransformStamped start_stamped;
@@ -1128,15 +1225,7 @@ bool PointCloudFusion::prepareBatchMotionTransforms(const std::vector<PointCloud
     return false;
   }
 
-  if (time_field_offsets.size() != msgs.size() ||
-      std::any_of(time_field_offsets.begin(), time_field_offsets.end(), [](int offset) { return offset == -1; })) {
-    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                         "Motion compensation requested, but at least one "
-                         "input lacks a valid UINT32 '%s' field; "
-                         "using rigid transforms for this heterogeneous batch",
-                         motion_compensation_time_field_.c_str());
-    return false;
-  }
+  if (time_field_offsets.size() != msgs.size()) return false;
 
   const bool recovery_probe = !motion_tf_available_.load(std::memory_order_relaxed);
   const double timeout_sec = recovery_probe ? 0.0 : motion_compensation_tf_timeout_sec_;
@@ -1158,6 +1247,64 @@ bool PointCloudFusion::prepareBatchMotionTransforms(const std::vector<PointCloud
                 "again; resuming compensated fusion");
   }
   return prepared_any;
+}
+
+void PointCloudFusion::validateObjectMotionParameters() const {
+  if (object_motion_compensation_enable_ && !motion_compensation_enable_) {
+    throw std::invalid_argument("object_motion_compensation.enable requires motion_compensation.enable");
+  }
+  if (!object_motion_velocity_fields_.empty() && object_motion_velocity_fields_.size() != input_topics_.size()) {
+    throw std::invalid_argument("object_motion_compensation.velocity_fields must match input_topics length");
+  }
+  if (object_motion_doppler_sign_ != 1.0 && object_motion_doppler_sign_ != -1.0) {
+    throw std::invalid_argument("object_motion_compensation.doppler_sign must be 1 or -1");
+  }
+  if (!std::isfinite(object_motion_max_time_offset_sec_) || object_motion_max_time_offset_sec_ <= 0.0 ||
+      !std::isfinite(object_motion_max_speed_mps_) || object_motion_max_speed_mps_ <= 0.0) {
+    throw std::invalid_argument("object motion limits must be finite and positive");
+  }
+  if (object_motion_invalid_flags_mask_ != 0 && object_motion_invalid_flags_field_.empty()) {
+    throw std::invalid_argument("object_motion_compensation.invalid_flags_mask requires invalid_flags_field");
+  }
+}
+
+ObjectMotion PointCloudFusion::prepareObjectMotion(const PointCloudMsg& cloud,
+                                                   std::size_t input_index,
+                                                   const rclcpp::Time& reference_stamp) const {
+  ObjectMotion motion;
+  if (!object_motion_compensation_enable_) return motion;
+  const auto& name =
+      object_motion_velocity_fields_.empty() ? object_motion_velocity_field_ : object_motion_velocity_fields_[input_index];
+  if (name.empty()) return motion;
+  const auto* velocity = detail::findField(cloud, name);
+  if (velocity == nullptr) return motion;  // Missing velocity is expected for sensors such as Ouster.
+  if (velocity->count != 1 || !detail::validField(*velocity, cloud.point_step) ||
+      (velocity->datatype != sensor_msgs::msg::PointField::FLOAT32 &&
+       velocity->datatype != sensor_msgs::msg::PointField::FLOAT64)) {
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                         "Object motion: '%s' must be a scalar FLOAT32/FLOAT64 measurement; skipping correction", name.c_str());
+    return motion;
+  }
+  if (object_motion_invalid_flags_mask_ != 0) {
+    const auto* flags = detail::findField(cloud, object_motion_invalid_flags_field_);
+    if (flags == nullptr || flags->count != 1 || flags->datatype != sensor_msgs::msg::PointField::UINT32 ||
+        !detail::validField(*flags, cloud.point_step)) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                           "Object motion: configured invalid_flags_field is unavailable; skipping correction");
+      return motion;
+    }
+    motion.invalid_flags_offset = static_cast<int>(flags->offset);
+    motion.invalid_flags_mask = static_cast<uint32_t>(object_motion_invalid_flags_mask_);
+  }
+  motion.velocity_offset = static_cast<int>(velocity->offset);
+  motion.velocity_datatype = velocity->datatype;
+  // Subtract integer ROS timestamps before converting the short interval to float.
+  motion.reference_offset_sec = static_cast<float>((reference_stamp - rclcpp::Time(cloud.header.stamp)).seconds());
+  motion.time_scale_sec = static_cast<float>(motion_compensation_time_scale_sec_);
+  motion.doppler_sign = static_cast<float>(object_motion_doppler_sign_);
+  motion.max_time_offset_sec = static_cast<float>(object_motion_max_time_offset_sec_);
+  motion.max_speed_mps = static_cast<float>(object_motion_max_speed_mps_);
+  return motion;
 }
 
 void PointCloudFusion::warnUnusedFillOverrides(const std::vector<std::string>& fields) const {
@@ -1281,12 +1428,15 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
                            output_calibration_field != layout.fields.end();
 
     const bool apply_transform = batch_motion || msg->header.frame_id != target_frame_;
+    const auto object_motion = batch_motion ? prepareObjectMotion(*msg, input_index, chosen_stamp) : ObjectMotion{};
     tf2::Vector3 translation(0.0, 0.0, 0.0);
     tf2::Matrix3x3 rotation = tf2::Matrix3x3::getIdentity();
     if (!batch_motion && apply_transform) {
       try {
-        const auto stamped = tf_buffer_->lookupTransform(target_frame_, msg->header.frame_id, msg->header.stamp,
-                                                         rclcpp::Duration::from_seconds(0.1));
+        const auto stamped = lookupWithWallTimeout(0.1, [&] {
+          return tf_buffer_->lookupTransform(target_frame_, msg->header.frame_id, msg->header.stamp,
+                                             rclcpp::Duration::from_seconds(0.0));
+        });
         tf2::Transform transform;
         tf2::fromMsg(stamped.transform, transform);
         translation = transform.getOrigin();
@@ -1315,16 +1465,26 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
           samples == total_points ? sample
                                   : std::min(static_cast<std::size_t>(static_cast<double>(sample) * stride), total_points - 1);
       const uint8_t* source = byteOffset(msg->data.data(), point_index * msg->point_step);
-      const float x = loadFloat(source, input.x_offset);
-      const float y = loadFloat(source, input.y_offset);
-      const float z = loadFloat(source, input.z_offset);
+      float x = loadFloat(source, input.x_offset);
+      float y = loadFloat(source, input.y_offset);
+      float z = loadFloat(source, input.z_offset);
       if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) continue;
+
+      const uint32_t point_time =
+          batch_motion && input.time_offset >= 0 ? loadUint32(source, static_cast<std::size_t>(input.time_offset)) : 0U;
+      if (object_motion.velocity_offset >= 0 &&
+          (object_motion.invalid_flags_offset < 0 ||
+           (loadUint32(source, static_cast<std::size_t>(object_motion.invalid_flags_offset)) &
+            object_motion.invalid_flags_mask) == 0U)) {
+        const float velocity = loadObjectVelocity(byteOffset(source, static_cast<std::size_t>(object_motion.velocity_offset)),
+                                                  object_motion.velocity_datatype, msg->is_bigendian);
+        compensateObjectMotion(object_motion, velocity, point_time, x, y, z);
+      }
 
       float transformed_x = x;
       float transformed_y = y;
       float transformed_z = z;
       if (batch_motion) {
-        const uint32_t point_time = loadUint32(source, static_cast<std::size_t>(input.time_offset));
         transformPointInterpolated(motion_transforms[input_index], point_time, x, y, z, transformed_x, transformed_y,
                                    transformed_z);
       } else if (apply_transform) {
@@ -1525,6 +1685,8 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   valid_point_count = 0;
   if (msgs.empty() || !cuda_context_) return nullptr;
 
+  const rclcpp::Time chosen_stamp = outputStamp(timing);
+
   const bool publish_time_field = detail::fieldIsPublished(output_fields_, motion_compensation_time_field_);
   const auto processing_fields =
       detail::processingFields(output_fields_, motion_compensation_time_field_, motion_compensation_enable_);
@@ -1560,12 +1722,69 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   const bool has_active_calibration = output_calibration_field != output_layout.fields.end() &&
                                       std::any_of(calibration_mappings.begin(), calibration_mappings.end(),
                                                   [](const auto& mapping) { return mapping != nullptr; });
+  std::vector<ObjectMotion> source_objects(msgs.size());
+  std::vector<ObjectMotion> packed_objects(msgs.size());
+  bool private_velocity = false;
+  bool private_flags = false;
+  if (object_motion_compensation_enable_) {
+    for (std::size_t i = 0; i < msgs.size(); ++i) {
+      if (!msgs[i] || !processing_layout.inputs[i].valid) continue;
+      source_objects[i] = prepareObjectMotion(*msgs[i], i, chosen_stamp);
+      packed_objects[i] = source_objects[i];
+      if (source_objects[i].velocity_offset < 0) continue;
+      const auto packed_offset = [&](int offset, int datatype) {
+        for (const auto& source : msgs[i]->fields) {
+          if (source.offset != static_cast<uint32_t>(offset) || source.datatype != datatype || source.count != 1) continue;
+          for (const auto& destination : processing_layout.fields) {
+            if (source.name == destination.name && detail::sameType(source, destination)) {
+              return static_cast<int>(destination.offset);
+            }
+          }
+        }
+        return -1;
+      };
+      packed_objects[i].velocity_offset = packed_offset(source_objects[i].velocity_offset, source_objects[i].velocity_datatype);
+      private_velocity = private_velocity || packed_objects[i].velocity_offset < 0;
+      if (source_objects[i].invalid_flags_offset >= 0) {
+        packed_objects[i].invalid_flags_offset =
+            packed_offset(source_objects[i].invalid_flags_offset, sensor_msgs::msg::PointField::UINT32);
+        private_flags = private_flags || packed_objects[i].invalid_flags_offset < 0;
+      }
+    }
+  }
   // A private FLOAT32 slot preserves a follower feature even when its ROS
   // datatype differs from the output datatype (for example Aeva FLOAT32 to
   // Ouster UINT16 reflectivity). It is consumed by the CUDA kernel and never
   // appears in the published layout.
   const std::size_t calibration_scratch_offset = processing_layout.point_step;
-  const std::size_t processing_point_step = processing_layout.point_step + (has_active_calibration ? sizeof(float) : 0U);
+  const std::size_t velocity_scratch_offset = calibration_scratch_offset + (has_active_calibration ? sizeof(float) : 0U);
+  const std::size_t flags_scratch_offset = velocity_scratch_offset + (private_velocity ? sizeof(float) : 0U);
+  const std::size_t time_scratch_offset = flags_scratch_offset + (private_flags ? sizeof(uint32_t) : 0U);
+  int packed_time_offset = -1;
+  for (const auto& field : processing_layout.fields) {
+    if (field.name == motion_compensation_time_field_ && field.datatype == sensor_msgs::msg::PointField::UINT32 &&
+        field.count == 1) {
+      packed_time_offset = static_cast<int>(field.offset);
+      break;
+    }
+  }
+  // A conflicting same-name time field may be omitted or represented by a
+  // different datatype. Retain measured UINT32 timing independently of output.
+  const bool private_time = motion_compensation_enable_ && packed_time_offset < 0 &&
+                            std::any_of(processing_layout.inputs.begin(), processing_layout.inputs.end(),
+                                        [](const auto& input) { return input.valid && input.time_offset >= 0; });
+  if (private_time) packed_time_offset = static_cast<int>(time_scratch_offset);
+  const std::size_t processing_point_step = time_scratch_offset + (private_time ? sizeof(uint32_t) : 0U);
+  for (std::size_t i = 0; i < msgs.size(); ++i) {
+    if (source_objects[i].velocity_offset < 0) continue;
+    if (packed_objects[i].velocity_offset < 0) {
+      packed_objects[i].velocity_offset = static_cast<int>(velocity_scratch_offset);
+      packed_objects[i].velocity_datatype = sensor_msgs::msg::PointField::FLOAT32;
+    }
+    if (source_objects[i].invalid_flags_offset >= 0 && packed_objects[i].invalid_flags_offset < 0) {
+      packed_objects[i].invalid_flags_offset = static_cast<int>(flags_scratch_offset);
+    }
+  }
 
   // Heterogeneous clouds are packed into one processing layout on the host.
   // It may contain a private time field used by motion compensation. The CUDA
@@ -1591,7 +1810,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     source_time_offsets[i] = input.time_offset;
     point_counts[i] = std::min(static_cast<std::size_t>(msg->width) * msg->height, msg->data.size() / msg->point_step);
     max_points = std::max(max_points, point_counts[i]);
-    if (input.whole_point_copy && !has_active_calibration) {
+    if (input.whole_point_copy && processing_point_step == processing_layout.point_step) {
       input_data[i] = msg->data.data();
       continue;
     }
@@ -1600,6 +1819,12 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     const auto* calibration_field = mapping ? detail::findField(*msg, feature_calibration_field_) : nullptr;
     const bool pack_calibration =
         calibration_field != nullptr && calibration_field->count == 1 && detail::validField(*calibration_field, msg->point_step);
+    const auto object = source_objects[i];
+    const bool pack_velocity = object.velocity_offset >= 0 && private_velocity &&
+                               packed_objects[i].velocity_offset == static_cast<int>(velocity_scratch_offset);
+    const bool pack_flags = object.invalid_flags_offset >= 0 && private_flags &&
+                            packed_objects[i].invalid_flags_offset == static_cast<int>(flags_scratch_offset);
+    const bool pack_time = private_time && input.time_offset >= 0;
     for (std::size_t point = 0; point < point_counts[i]; ++point) {
       const uint8_t* source = byteOffset(msg->data.data(), point * msg->point_step);
       uint8_t* destination = byteOffset(packed[i].data(), point * processing_point_step);
@@ -1617,6 +1842,19 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
           std::memcpy(byteOffset(destination, calibration_scratch_offset), &value, sizeof(value));
         }
       }
+      if (pack_velocity) {
+        const float velocity = loadObjectVelocity(byteOffset(source, static_cast<std::size_t>(object.velocity_offset)),
+                                                  object.velocity_datatype, msg->is_bigendian);
+        std::memcpy(byteOffset(destination, velocity_scratch_offset), &velocity, sizeof(velocity));
+      }
+      if (pack_flags) {
+        const uint32_t flags = loadUint32(source, static_cast<std::size_t>(object.invalid_flags_offset));
+        std::memcpy(byteOffset(destination, flags_scratch_offset), &flags, sizeof(flags));
+      }
+      if (pack_time) {
+        const uint32_t time = loadUint32(source, static_cast<std::size_t>(input.time_offset));
+        std::memcpy(byteOffset(destination, time_scratch_offset), &time, sizeof(time));
+      }
     }
     input_data[i] = packed[i].data();
     if (!input.zero_filled_fields.empty()) {
@@ -1625,15 +1863,6 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   }
   if (max_points == 0) return nullptr;
 
-  int packed_time_offset = -1;
-  for (const auto& field : processing_layout.fields) {
-    if (field.name == motion_compensation_time_field_ && field.datatype == sensor_msgs::msg::PointField::UINT32 &&
-        field.count == 1) {
-      packed_time_offset = static_cast<int>(field.offset);
-      break;
-    }
-  }
-  const rclcpp::Time chosen_stamp = outputStamp(timing);
   std::vector<MotionTransform> motion_transforms;
   const bool batch_motion = prepareBatchMotionTransforms(msgs, chosen_stamp, source_time_offsets, motion_transforms);
   const std::size_t total_capacity = max_points * msgs.size();
@@ -1675,8 +1904,10 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     float translation[3] = {0, 0, 0};
     if (!batch_motion && apply_transform) {
       try {
-        const auto stamped = tf_buffer_->lookupTransform(target_frame_, msg->header.frame_id, msg->header.stamp,
-                                                         rclcpp::Duration::from_seconds(0.1));
+        const auto stamped = lookupWithWallTimeout(0.1, [&] {
+          return tf_buffer_->lookupTransform(target_frame_, msg->header.frame_id, msg->header.stamp,
+                                             rclcpp::Duration::from_seconds(0.0));
+        });
         tf2::Transform transform;
         tf2::fromMsg(stamped.transform, transform);
         const auto basis = transform.getBasis();
@@ -1710,7 +1941,8 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
                                  calibrate ? static_cast<int>(sensor_msgs::msg::PointField::FLOAT32) : 0,
                                  calibrate ? static_cast<int>(output_calibration_field->datatype) : 0,
                                  calibrate ? static_cast<int>(mapping->source.size()) : 0,
-                                 calibrate ? mapping->source.data() : nullptr, calibrate ? mapping->target.data() : nullptr)) {
+                                 calibrate ? mapping->source.data() : nullptr, calibrate ? mapping->target.data() : nullptr,
+                                 batch_motion ? packed_objects[i] : ObjectMotion{})) {
       RCLCPP_ERROR(this->get_logger(), "CUDA addCloud failed for input %zu", i);
     }
   }

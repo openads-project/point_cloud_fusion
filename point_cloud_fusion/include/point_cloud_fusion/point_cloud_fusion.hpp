@@ -30,6 +30,7 @@
 
 #include <point_cloud_fusion/feature_calibration.hpp>
 #include <point_cloud_fusion/motion_compensation.hpp>
+#include <point_cloud_fusion/object_motion_compensation.hpp>
 
 #ifdef ENABLE_CUDA
 #include <point_cloud_fusion/point_cloud_fusion_cuda.hpp>
@@ -132,6 +133,14 @@ class PointCloudFusion : public rclcpp::Node {
 
   /** Warn, with throttling, about fill overrides unused by the current output layout. */
   void warnUnusedFillOverrides(const std::vector<std::string>& fields) const;
+
+  /** Validate object-motion settings at startup, before processing any clouds. */
+  void validateObjectMotionParameters() const;
+
+  /** Resolve original velocity/validity fields and timing once per input cloud. */
+  ObjectMotion prepareObjectMotion(const PointCloudMsg& cloud,
+                                   std::size_t input_index,
+                                   const rclcpp::Time& reference_stamp) const;
 
   /**
    * @brief Timing metadata for one synchronized fusion batch.
@@ -287,6 +296,14 @@ class PointCloudFusion : public rclcpp::Node {
   std::string motion_compensation_time_field_ = "t";
   double motion_compensation_time_scale_sec_ = 1.0e-9;
   double motion_compensation_tf_timeout_sec_ = 0.1;
+  bool object_motion_compensation_enable_ = false;
+  std::string object_motion_velocity_field_ = "velocity";
+  std::vector<std::string> object_motion_velocity_fields_;
+  double object_motion_doppler_sign_ = 1.0;
+  double object_motion_max_time_offset_sec_ = 0.2;
+  double object_motion_max_speed_mps_ = 100.0;
+  std::string object_motion_invalid_flags_field_;
+  int64_t object_motion_invalid_flags_mask_ = 0;
   mutable std::atomic_bool motion_tf_available_{true};
   mutable std::atomic_uint64_t skipped_cloud_count_{0};
   mutable std::atomic_uint64_t missing_xyz_count_{0};

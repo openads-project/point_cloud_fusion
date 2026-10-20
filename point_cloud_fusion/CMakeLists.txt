@@ -172,7 +172,8 @@ if(BUILD_TESTING)
   target_include_directories(test_point_cloud_layout PRIVATE include)
   ament_target_dependencies(test_point_cloud_layout sensor_msgs)
 
-  ament_add_gtest(test_heterogeneous_fusion test/test_heterogeneous_fusion.cpp TIMEOUT 120)
+  # Runs each integration case on CPU/CUDA and in both input orders.
+  ament_add_gtest(test_heterogeneous_fusion test/test_heterogeneous_fusion.cpp TIMEOUT 300)
   target_link_libraries(test_heterogeneous_fusion ${TARGET_NAME})
   ament_target_dependencies(test_heterogeneous_fusion rclcpp sensor_msgs tf2_ros)
 

@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <vector>
 
+#include <point_cloud_fusion/object_motion_compensation.hpp>
+
 namespace point_cloud_fusion {
 namespace cuda {
 
@@ -36,6 +38,7 @@ struct CloudMetadata {
   float end_translation[3];
   float start_quaternion[4];
   float end_quaternion[4];
+  ObjectMotion object_motion;
   int calibration_source_offset;
   int calibration_destination_offset;
   int calibration_source_datatype;
@@ -131,7 +134,8 @@ class CudaTransformContext {
                 int calibration_destination_datatype = 0,
                 int calibration_knot_count = 0,
                 const float* calibration_source = nullptr,
-                const float* calibration_target = nullptr);
+                const float* calibration_target = nullptr,
+                const ObjectMotion& object_motion = ObjectMotion{});
 
   /**
    * @brief Get the accumulated results from the batch

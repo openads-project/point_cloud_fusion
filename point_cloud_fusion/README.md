@@ -50,6 +50,14 @@ flowchart LR
 | `motion_compensation.time_field` | `string` | `"t"` | UINT32 point field containing an offset from the cloud header stamp |
 | `motion_compensation.time_scale_sec` | `float` | `1.0e-9` | Seconds represented by one unit of the per-point time field |
 | `motion_compensation.tf_timeout_sec` | `float` | `0.1` | Timeout for the first motion-compensation TF failure [s] |
+| `object_motion_compensation.enable` | `bool` | `false` | Advance points to the output timestamp using absolute radial velocity |
+| `object_motion_compensation.velocity_field` | `string` | `"velocity"` | Scalar FLOAT32/FLOAT64 absolute radial velocity field in m/s |
+| `object_motion_compensation.velocity_fields` | `string[]` | `[]` | Optional velocity field per input_topics entry; empty entries disable correction |
+| `object_motion_compensation.doppler_sign` | `float` | `1.0` | 1 for increasing-range-positive velocity, -1 for approaching-positive |
+| `object_motion_compensation.max_time_offset_sec` | `float` | `0.2` | Maximum absolute point extrapolation duration [s] |
+| `object_motion_compensation.max_speed_mps` | `float` | `100.0` | Maximum accepted absolute radial speed [m/s] |
+| `object_motion_compensation.invalid_flags_field` | `string` | - | Optional UINT32 field containing invalid-velocity flag bits |
+| `object_motion_compensation.invalid_flags_mask` | `int` | `0` | Skip object correction when any masked flag is set; zero disables the mask |
 | `range_limits.enable` | `bool` | `false` | Enable XYZ range filtering after transformation into target_frame |
 | `range_limits.x_min` | `float` | `-1000.0` | Minimum x coordinate in target_frame to keep [m] |
 | `range_limits.x_max` | `float` | `1000.0` | Maximum x coordinate in target_frame to keep [m] |

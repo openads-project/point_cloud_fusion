@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 #include <rcl/time.h>
 #include <tf2_ros/static_transform_broadcaster.h>
+#include <tf2_ros/transform_broadcaster.h>
 #include <rcl_interfaces/msg/log.hpp>
 
 #include <point_cloud_fusion/point_cloud_fusion.hpp>
@@ -95,6 +96,26 @@ struct Configuration {
   bool aeva_first;
 };
 
+Cloud objectCloud() {
+  auto cloud = syntheticCloud(true);
+  const std::array<float, 4> velocities{5.0F, 0.0F, -5.0F, std::numeric_limits<float>::quiet_NaN()};
+  for (std::size_t i = 0; i < velocities.size(); ++i) {
+    write(cloud, i, 20, 10.0F);
+    write(cloud, i, 28, 0.0F);
+    write(cloud, i, 12, 0.0F);
+    write(cloud, i, 0, velocities[i]);
+    write(cloud, i, 32, uint32_t{100000000});
+    write(cloud, i, 48, static_cast<double>(velocities[i]));
+  }
+  return cloud;
+}
+
+std::vector<rclcpp::Parameter> objectParameters() {
+  return {rclcpp::Parameter("motion_compensation.enable", true),
+          rclcpp::Parameter("motion_compensation.fixed_frame", "base_link"),
+          rclcpp::Parameter("object_motion_compensation.enable", true)};
+}
+
 class HeterogeneousFusion : public testing::TestWithParam<Configuration> {
  protected:
   static void SetUpTestSuite() { rclcpp::init(0, nullptr); }
@@ -151,9 +172,11 @@ class HeterogeneousFusion : public testing::TestWithParam<Configuration> {
   void fuse(Cloud aeva = syntheticCloud(true), Cloud ouster = syntheticCloud(false)) {
     output_.reset();
     const auto first_stamp = next_stamp_;
-    aeva.header.stamp.sec = ouster.header.stamp.sec = next_stamp_;
+    const auto ouster_second_offset = ouster.header.stamp.sec - aeva.header.stamp.sec;
+    aeva.header.stamp.sec = next_stamp_;
+    ouster.header.stamp.sec = next_stamp_ + ouster_second_offset;
     // Retry best-effort sensor messages while middleware endpoints finish
-    // matching. Equal stamps let ApproximateTime emit without a later scan.
+    // matching. Most fixtures use equal stamps to avoid needing a later scan.
     auto next_publish = std::chrono::steady_clock::now();
     ASSERT_TRUE(spinUntil([&] {
       if (output_ && output_->header.stamp.sec >= first_stamp) return true;
@@ -161,7 +184,8 @@ class HeterogeneousFusion : public testing::TestWithParam<Configuration> {
         aeva_publisher_->publish(aeva);
         ouster_publisher_->publish(ouster);
         ++next_stamp_;
-        aeva.header.stamp.sec = ouster.header.stamp.sec = next_stamp_;
+        aeva.header.stamp.sec = next_stamp_;
+        ouster.header.stamp.sec = next_stamp_ + ouster_second_offset;
         next_publish = std::chrono::steady_clock::now() + 50ms;
       }
       return false;
@@ -225,6 +249,43 @@ class HeterogeneousFusion : public testing::TestWithParam<Configuration> {
     std::sort(actual_x.begin(), actual_x.end());
     std::sort(expected_x.begin(), expected_x.end());
     EXPECT_EQ(actual_x, expected_x);
+  }
+
+  void checkObjectPoint(float intensity, float x, float y = 0.0F, float z = 0.0F) {
+    ASSERT_NE(output_, nullptr);
+    const auto* feature = point_cloud_fusion::detail::findField(*output_, "intensity");
+    ASSERT_NE(feature, nullptr);
+    const std::array<float, 3> expected{x, y, z};
+    for (std::size_t i = 0; i < output_->width; ++i) {
+      if (read<float>(*output_, i, feature->offset) != intensity) continue;
+      for (std::size_t axis = 0; axis < 3; ++axis) {
+        const auto* coordinate = point_cloud_fusion::detail::findField(*output_, std::array<const char*, 3>{"x", "y", "z"}[axis]);
+        ASSERT_NE(coordinate, nullptr);
+        EXPECT_NEAR(read<float>(*output_, i, coordinate->offset), expected[axis], 2.0e-5F) << "intensity=" << intensity;
+      }
+      return;
+    }
+    FAIL() << "Point with intensity=" << intensity << " is missing";
+  }
+
+  void checkObjectTimestamp(const std::string& mode, float expected_x) {
+    auto params = objectParameters();
+    params.emplace_back("output_stamp_mode", mode);
+    params.emplace_back("max_time_diff_sec", 0.5);
+    start(params);
+    if (IsSkipped() || HasFatalFailure()) return;
+    next_stamp_ = 1800000000;
+    auto aeva = objectCloud();
+    auto ouster = syntheticCloud(false);
+    aeva.header.stamp.nanosec = 950000000;
+    ouster.header.stamp.sec += 1;
+    ouster.header.stamp.nanosec = 50000000;
+    // Acquisition crosses the second boundary; converting epoch timestamps to
+    // float before subtraction would erase these intervals entirely.
+    for (std::size_t i = 0; i < aeva.width; ++i) write(aeva, i, 32, uint32_t{50000000});
+    fuse(aeva, ouster);
+    checkObjectPoint(20, expected_x);
+    checkObjectPoint(21, 10.0F);
   }
 
   int32_t next_stamp_{100};
@@ -316,7 +377,8 @@ TEST_P(HeterogeneousFusion, EmptyOverridesUseDatatypeDefaults) {
 TEST_P(HeterogeneousFusion, UnusedOverridesWarnWithThrottlingAndPreserveMeasurements) {
   start({rclcpp::Parameter("missing_field_fill_values", std::vector<std::string>{"intensity=999", "t=nan"}),
          rclcpp::Parameter("output_fields", std::vector<std::string>{"x", "y", "z", "intensity"}),
-         rclcpp::Parameter("motion_compensation.enable", true)});
+         rclcpp::Parameter("motion_compensation.enable", true),
+         rclcpp::Parameter("motion_compensation.fixed_frame", "base_link")});
   if (IsSkipped() || HasFatalFailure()) return;
 
   // Advance the ROS clock for each parameterized case so the shared logging
@@ -491,6 +553,401 @@ TEST_P(HeterogeneousFusion, RigidTransformPreservesScalarVelocityBytes) {
   aeva.header.frame_id = "aeva";
   fuse(aeva);
   checkOutput({101, 102, 103, 104, 11, 12, 13}, true, 100.0F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionUsesAbsoluteVelocityAndPreservesUnknownMeasurements) {
+  start(objectParameters());
+  if (IsSkipped() || HasFatalFailure()) return;
+  fuse(objectCloud());
+  checkObjectPoint(20, 9.5F);
+  checkObjectPoint(21, 10.0F);
+  checkObjectPoint(22, 10.5F);
+  checkObjectPoint(23, 10.0F);
+  checkObjectPoint(40, 11.0F, 0.5F, 1.0F);
+  ASSERT_EQ(output_->width, 7U);
+  const auto* velocity = point_cloud_fusion::detail::findField(*output_, "velocity");
+  ASSERT_NE(velocity, nullptr);
+  const auto* intensity = point_cloud_fusion::detail::findField(*output_, "intensity");
+  for (std::size_t i = 0; i < output_->width; ++i) {
+    if (read<float>(*output_, i, intensity->offset) == 20.0F) {
+      EXPECT_FLOAT_EQ(read<float>(*output_, i, velocity->offset), 5.0F);
+    }
+  }
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionUsesPrivateMeasuredFieldsAndNeverOutputFills) {
+  auto params = objectParameters();
+  params.emplace_back("output_fields", std::vector<std::string>{"x", "y", "z", "intensity"});
+  params.emplace_back("missing_field_fill_values", std::vector<std::string>{"velocity=100", "t=nan"});
+  start(params);
+  if (IsSkipped() || HasFatalFailure()) return;
+  fuse(objectCloud());
+  checkObjectPoint(20, 9.5F);
+  checkObjectPoint(40, 11.0F, 0.5F, 1.0F);
+  EXPECT_EQ(point_cloud_fusion::detail::findField(*output_, "velocity"), nullptr);
+  EXPECT_EQ(point_cloud_fusion::detail::findField(*output_, "t"), nullptr);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionDoesNotTreatNumericFillsAsOusterMeasurements) {
+  auto params = objectParameters();
+  params.emplace_back("missing_field_fill_values", std::vector<std::string>{"velocity=100"});
+  start(params);
+  if (IsSkipped() || HasFatalFailure()) return;
+  auto ouster = syntheticCloud(false);
+  for (std::size_t i = 0; i < ouster.width; ++i) write(ouster, i, 16, uint32_t{100000000});
+  fuse(objectCloud(), ouster);
+  checkObjectPoint(20, 9.5F);
+  checkObjectPoint(40, 11.0F, 0.5F, 1.0F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionSupportsFloat64AndCustomVelocityNames) {
+  auto params = objectParameters();
+  params.emplace_back("object_motion_compensation.velocity_field", "custom_speed");
+  params.emplace_back("output_fields", std::vector<std::string>{"x", "y", "z", "intensity"});
+  start(params);
+  if (IsSkipped() || HasFatalFailure()) return;
+  auto aeva = objectCloud();
+  for (auto& field : aeva.fields)
+    if (field.name == "velocity_double") field.name = "custom_speed";
+  fuse(aeva);
+  checkObjectPoint(20, 9.5F);
+  checkObjectPoint(22, 10.5F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionReadsPublishedFloat64Measurements) {
+  auto params = objectParameters();
+  params.emplace_back("object_motion_compensation.velocity_field", "velocity_double");
+  start(params);
+  if (IsSkipped() || HasFatalFailure()) return;
+  auto aeva = objectCloud();
+  write(aeva, 0, 48, 5.125);
+  write(aeva, 1, 48, std::numeric_limits<double>::max());
+  write(aeva, 2, 48, -std::numeric_limits<double>::infinity());
+  fuse(aeva);
+  checkObjectPoint(20, 9.4875F);
+  checkObjectPoint(21, 10.0F);
+  checkObjectPoint(22, 10.0F);
+  const auto* velocity = point_cloud_fusion::detail::findField(*output_, "velocity_double");
+  ASSERT_NE(velocity, nullptr);
+  EXPECT_EQ(velocity->datatype, Field::FLOAT64);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionSurvivesConflictingAndChangingVelocitySchemas) {
+  start(objectParameters());
+  if (IsSkipped() || HasFatalFailure()) return;
+  auto other = objectCloud();
+  other.fields.erase(other.fields.begin());
+  for (auto& field : other.fields)
+    if (field.name == "velocity_double") field.name = "velocity";
+  for (std::size_t i = 0; i < other.width; ++i) write(other, i, 4, static_cast<float>(i + 40));
+  write(other, 0, 48, -10.0);
+  fuse(objectCloud(), other);
+  checkObjectPoint(20, 9.5F);
+  checkObjectPoint(40, 11.0F);
+  EXPECT_EQ(point_cloud_fusion::detail::findField(*output_, "velocity"), nullptr);
+
+  // Exercise the homogeneous fast path, then absent and restored measurements
+  // on the same running node. CUDA metadata must not leak across batches.
+  other = objectCloud();
+  for (std::size_t i = 0; i < other.width; ++i) write(other, i, 4, static_cast<float>(i + 40));
+  fuse(objectCloud(), other);
+  checkObjectPoint(20, 9.5F);
+  checkObjectPoint(40, 9.5F);
+  ASSERT_NE(point_cloud_fusion::detail::findField(*output_, "velocity"), nullptr);
+  fuse(objectCloud());
+  checkObjectPoint(40, 11.0F, 0.5F, 1.0F);
+  fuse(objectCloud(), other);
+  checkObjectPoint(40, 9.5F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionRejectsNonScalarAndIntegerVelocityFields) {
+  start(objectParameters());
+  if (IsSkipped() || HasFatalFailure()) return;
+  for (const auto datatype : {Field::FLOAT32, Field::UINT32}) {
+    auto aeva = objectCloud();
+    aeva.fields[0].datatype = datatype;
+    aeva.fields[0].count = datatype == Field::FLOAT32 ? 3 : 1;
+    fuse(aeva);
+    checkObjectPoint(20, 10.0F);
+  }
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionChecksSpeedTimeAndFiniteLimits) {
+  start(objectParameters());
+  if (IsSkipped() || HasFatalFailure()) return;
+  auto aeva = objectCloud();
+  write(aeva, 0, 0, std::numeric_limits<float>::infinity());
+  write(aeva, 1, 0, 101.0F);
+  write(aeva, 2, 32, uint32_t{300000000});
+  fuse(aeva);
+  for (float intensity : {20.0F, 21.0F, 22.0F, 23.0F}) checkObjectPoint(intensity, 10.0F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionSupportsApproachingPositiveDoppler) {
+  auto params = objectParameters();
+  params.emplace_back("object_motion_compensation.doppler_sign", -1.0);
+  start(params);
+  if (IsSkipped() || HasFatalFailure()) return;
+  fuse(objectCloud());
+  checkObjectPoint(20, 10.5F);
+  checkObjectPoint(22, 9.5F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionRetainsMeasuredTimingDespiteConflictingTimeTypes) {
+  start(objectParameters());
+  if (IsSkipped() || HasFatalFailure()) return;
+  auto ouster = syntheticCloud(false);
+  ouster.fields[4].datatype = Field::INT32;
+  fuse(objectCloud(), ouster);
+  checkObjectPoint(20, 9.5F);
+  checkObjectPoint(22, 10.5F);
+  EXPECT_EQ(point_cloud_fusion::detail::findField(*output_, "t"), nullptr);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionRetainsPrivateTimingDespiteConflictingTimeTypes) {
+  auto params = objectParameters();
+  params.emplace_back("output_fields", std::vector<std::string>{"x", "y", "z", "intensity"});
+  start(params);
+  if (IsSkipped() || HasFatalFailure()) return;
+  auto ouster = syntheticCloud(false);
+  ouster.fields[4].datatype = Field::INT32;
+  fuse(objectCloud(), ouster);
+  checkObjectPoint(20, 9.5F);
+  checkObjectPoint(22, 10.5F);
+  EXPECT_EQ(point_cloud_fusion::detail::findField(*output_, "t"), nullptr);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionSupportsPerInputFieldsAndDisabledEntries) {
+  auto params = objectParameters();
+  params.emplace_back("object_motion_compensation.velocity_fields", GetParam().aeva_first
+                                                                        ? std::vector<std::string>{"", "intensity"}
+                                                                        : std::vector<std::string>{"intensity", ""});
+  start(params);
+  if (IsSkipped() || HasFatalFailure()) return;
+  auto ouster = syntheticCloud(false);
+  write(ouster, 0, 4, 0.0F);
+  write(ouster, 0, 8, 0.0F);
+  write(ouster, 0, 16, uint32_t{100000000});
+  fuse(objectCloud(), ouster);
+  checkObjectPoint(20, 10.0F);
+  checkObjectPoint(40, 7.0F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionUsesPrivateValidityFlagsAndSkipsMissingFlags) {
+  auto params = objectParameters();
+  params.emplace_back("object_motion_compensation.invalid_flags_field", "point_flags_msb");
+  params.emplace_back("object_motion_compensation.invalid_flags_mask", int64_t{1});
+  params.emplace_back("output_fields", std::vector<std::string>{"x", "y", "z", "intensity"});
+  start(params);
+  if (IsSkipped() || HasFatalFailure()) return;
+  auto aeva = objectCloud();
+  aeva.fields.push_back(field("point_flags_msb", 56, Field::UINT32));
+  for (std::size_t i = 0; i < aeva.width; ++i) write(aeva, i, 56, uint32_t{0});
+  write(aeva, 2, 56, uint32_t{1});
+  fuse(aeva);
+  checkObjectPoint(20, 9.5F);
+  checkObjectPoint(22, 10.0F);
+  fuse(objectCloud());
+  checkObjectPoint(20, 10.0F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionUsesCloudTimestampWithoutPerPointTime) {
+  auto params = objectParameters();
+  params.emplace_back("output_stamp_mode", "latest");
+  params.emplace_back("max_time_diff_sec", 0.5);
+  start(params);
+  if (IsSkipped() || HasFatalFailure()) return;
+  auto aeva = objectCloud();
+  auto ouster = syntheticCloud(false);
+  aeva.fields.erase(std::remove_if(aeva.fields.begin(), aeva.fields.end(), [](const auto& field) { return field.name == "t"; }),
+                    aeva.fields.end());
+  ouster.header.stamp.nanosec = 100000000;
+  fuse(aeva, ouster);
+  checkObjectPoint(20, 10.5F);
+  checkObjectPoint(22, 9.5F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionUsesEarliestEpochTimestampAcrossSecondBoundary) {
+  checkObjectTimestamp("earliest", 9.75F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionUsesLatestEpochTimestampAcrossSecondBoundary) { checkObjectTimestamp("latest", 10.25F); }
+
+TEST_P(HeterogeneousFusion, ObjectMotionUsesMeanEpochTimestampAcrossSecondBoundary) { checkObjectTimestamp("mean", 10.0F); }
+
+TEST_P(HeterogeneousFusion, ObjectMotionUsesInputZeroEpochTimestampAcrossSecondBoundary) {
+  checkObjectTimestamp("input0", GetParam().aeva_first ? 9.75F : 10.25F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionChecksHighBitFlagsAndMalformedDescriptors) {
+  auto params = objectParameters();
+  params.emplace_back("object_motion_compensation.invalid_flags_field", "flags");
+  params.emplace_back("object_motion_compensation.invalid_flags_mask", int64_t{0x80000000});
+  start(params);
+  if (IsSkipped() || HasFatalFailure()) return;
+  auto aeva = objectCloud();
+  aeva.fields.push_back(field("flags", 56, Field::UINT32));
+  for (std::size_t i = 0; i < aeva.width; ++i) write(aeva, i, 56, uint32_t{1});
+  write(aeva, 2, 56, uint32_t{0x80000000});
+  fuse(aeva);
+  checkObjectPoint(20, 9.5F);
+  checkObjectPoint(22, 10.0F);
+  aeva.fields.back().offset = aeva.point_step - 1;
+  fuse(aeva);
+  checkObjectPoint(20, 10.0F);
+  aeva.fields.back().offset = 56;
+  aeva.fields.front().offset = aeva.point_step - 1;
+  fuse(aeva);
+  checkObjectPoint(20, 10.0F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionUsesAcquisitionRayBeforeTranslationAndRotation) {
+  start(objectParameters());
+  if (IsSkipped() || HasFatalFailure()) return;
+  tf2_ros::StaticTransformBroadcaster broadcaster(driver_);
+  geometry_msgs::msg::TransformStamped transform;
+  transform.header.frame_id = "base_link";
+  transform.child_frame_id = "aeva";
+  transform.transform.translation.x = 100.0;
+  transform.transform.rotation.z = std::sqrt(0.5);
+  transform.transform.rotation.w = std::sqrt(0.5);
+  broadcaster.sendTransform(transform);
+  executor_->spin_all(100ms);
+  auto aeva = objectCloud();
+  aeva.header.frame_id = "aeva";
+  fuse(aeva);
+  checkObjectPoint(20, 100.0F, 9.5F);
+  checkObjectPoint(22, 100.0F, 10.5F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionCombinesWithEgoTranslationWithoutDoubleCorrection) {
+  start({rclcpp::Parameter("motion_compensation.enable", true), rclcpp::Parameter("motion_compensation.fixed_frame", "map"),
+         rclcpp::Parameter("object_motion_compensation.enable", true)});
+  if (IsSkipped() || HasFatalFailure()) return;
+  tf2_ros::TransformBroadcaster broadcaster(driver_);
+  // Keep both samples inside TF's ten-second cache, including when DDS
+  // delivers the newer sample first.
+  for (const int32_t seconds : {98, 107}) {
+    geometry_msgs::msg::TransformStamped transform;
+    transform.header.stamp.sec = seconds;
+    transform.header.frame_id = "map";
+    transform.child_frame_id = "base_link";
+    transform.transform.translation.x = 2.0 * seconds;
+    transform.transform.rotation.w = 1.0;
+    broadcaster.sendTransform(transform);
+  }
+  executor_->spin_all(100ms);
+  fuse(objectCloud());
+  checkObjectPoint(20, 9.7F);
+  checkObjectPoint(21, 10.2F);
+  checkObjectPoint(22, 10.7F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionIsDisabledDuringTfFallback) {
+  start({rclcpp::Parameter("motion_compensation.enable", true), rclcpp::Parameter("motion_compensation.fixed_frame", "missing"),
+         rclcpp::Parameter("motion_compensation.tf_timeout_sec", 0.0),
+         rclcpp::Parameter("object_motion_compensation.enable", true)});
+  if (IsSkipped() || HasFatalFailure()) return;
+  fuse(objectCloud());
+  checkObjectPoint(20, 10.0F);
+  tf2_ros::StaticTransformBroadcaster broadcaster(driver_);
+  geometry_msgs::msg::TransformStamped transform;
+  transform.header.frame_id = "missing";
+  transform.child_frame_id = "base_link";
+  transform.transform.rotation.w = 1.0;
+  broadcaster.sendTransform(transform);
+  executor_->spin_all(100ms);
+  fuse(objectCloud());
+  checkObjectPoint(20, 9.5F);
+}
+
+TEST_P(HeterogeneousFusion, MissingTfWaitIsBoundedWhileRosTimeIsPaused) {
+  start({rclcpp::Parameter("motion_compensation.enable", true), rclcpp::Parameter("motion_compensation.fixed_frame", "missing"),
+         rclcpp::Parameter("motion_compensation.tf_timeout_sec", 0.02),
+         rclcpp::Parameter("object_motion_compensation.enable", true)});
+  if (IsSkipped() || HasFatalFailure()) return;
+  {
+    std::lock_guard<std::mutex> clock_lock(fusion_->get_clock()->get_clock_mutex());
+    auto* clock = fusion_->get_clock()->get_clock_handle();
+    ASSERT_EQ(rcl_enable_ros_time_override(clock), RCL_RET_OK);
+    ASSERT_EQ(rcl_set_ros_time_override(clock, 100'000'000'000LL), RCL_RET_OK);
+  }
+  const auto start_time = std::chrono::steady_clock::now();
+  // Both the advanced motion lookup and the rigid fallback lookup fail for
+  // Aeva. Ouster is already in the output frame and must still be published.
+  auto aeva = objectCloud();
+  aeva.header.frame_id = "missing_sensor";
+  fuse(aeva);
+  ASSERT_NE(output_, nullptr);
+  EXPECT_EQ(output_->width, 3U);
+  checkObjectPoint(40, 11.0F, 0.5F, 1.0F);
+  EXPECT_LT(std::chrono::steady_clock::now() - start_time, 1s);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionCombinesWithEgoRotation) {
+  start({rclcpp::Parameter("motion_compensation.enable", true), rclcpp::Parameter("motion_compensation.fixed_frame", "map"),
+         rclcpp::Parameter("object_motion_compensation.enable", true)});
+  if (IsSkipped() || HasFatalFailure()) return;
+  tf2_ros::TransformBroadcaster broadcaster(driver_);
+  for (const int32_t seconds : {98, 107}) {
+    geometry_msgs::msg::TransformStamped transform;
+    transform.header.stamp.sec = seconds;
+    transform.header.frame_id = "map";
+    transform.child_frame_id = "base_link";
+    const double angle = (seconds - 98) * std::acos(-1.0) / 20.0;
+    transform.transform.rotation.z = std::sin(angle / 2.0);
+    transform.transform.rotation.w = std::cos(angle / 2.0);
+    broadcaster.sendTransform(transform);
+  }
+  executor_->spin_all(100ms);
+  fuse(objectCloud());
+  const float angle = static_cast<float>(std::acos(-1.0) * 0.1 / 20.0);
+  checkObjectPoint(20, 9.5F * std::cos(angle), 9.5F * std::sin(angle));
+  checkObjectPoint(21, 10.0F * std::cos(angle), 10.0F * std::sin(angle));
+  checkObjectPoint(22, 10.5F * std::cos(angle), 10.5F * std::sin(angle));
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionAppliesRangeFilteringAfterDisplacement) {
+  auto params = objectParameters();
+  params.emplace_back("range_limits.enable", true);
+  params.emplace_back("range_limits.x_max", 9.75);
+  start(params);
+  if (IsSkipped() || HasFatalFailure()) return;
+  fuse(objectCloud());
+  ASSERT_NE(output_, nullptr);
+  EXPECT_EQ(output_->width, 1U);
+  checkObjectPoint(20, 9.5F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionParameterUpdatesAreAtomicWithEgoMotion) {
+  start({rclcpp::Parameter("motion_compensation.fixed_frame", "base_link")});
+  if (IsSkipped() || HasFatalFailure()) return;
+  EXPECT_FALSE(fusion_->set_parameter(rclcpp::Parameter("object_motion_compensation.enable", true)).successful);
+  EXPECT_TRUE(fusion_
+                  ->set_parameters_atomically({rclcpp::Parameter("motion_compensation.enable", true),
+                                               rclcpp::Parameter("object_motion_compensation.enable", true)})
+                  .successful);
+  fuse(objectCloud());
+  checkObjectPoint(20, 9.5F);
+  EXPECT_FALSE(fusion_->set_parameter(rclcpp::Parameter("motion_compensation.enable", false)).successful);
+  EXPECT_TRUE(fusion_
+                  ->set_parameters_atomically({rclcpp::Parameter("motion_compensation.enable", false),
+                                               rclcpp::Parameter("object_motion_compensation.enable", false)})
+                  .successful);
+  fuse(objectCloud());
+  checkObjectPoint(20, 10.0F);
+}
+
+TEST_P(HeterogeneousFusion, ObjectMotionRejectsInvalidConfigurationAtStartup) {
+  start();
+  if (IsSkipped() || HasFatalFailure()) return;
+  const std::vector<std::vector<rclcpp::Parameter>> invalid{
+      {rclcpp::Parameter("object_motion_compensation.enable", true)},
+      {rclcpp::Parameter("object_motion_compensation.doppler_sign", 0.0)},
+      {rclcpp::Parameter("object_motion_compensation.velocity_fields", std::vector<std::string>{"velocity"})},
+      {rclcpp::Parameter("object_motion_compensation.max_speed_mps", std::numeric_limits<double>::quiet_NaN())},
+      {rclcpp::Parameter("object_motion_compensation.invalid_flags_mask", int64_t{1})}};
+  for (const auto& params : invalid) EXPECT_THROW(start(params), std::invalid_argument);
 }
 
 const std::vector<Configuration> configurations{
