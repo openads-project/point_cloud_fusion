@@ -8,6 +8,11 @@
       - "raw"
       - "raw"
 
+    sync_mode: approximate # approximate: require all inputs; partial: publish available inputs after a bounded wait
+    partial_sync:
+      publish_rate_hz: 0.0 # Required positive maximum rate when sync_mode is partial (e.g. 20.0)
+      timeout_sec: 0.01 # Collection window after the first pending cloud; replacements do not extend it
+      max_age_sec: 0.2 # Maximum measurement age relative to the node clock; must be >= timeout_sec
     sync_queue_size: 3 # Queue depth for approximate time synchronization
     max_time_diff_sec: 0.05 # Maximum allowed timestamp difference (seconds) across inputs
     output_queue_size: 10 # Queue depth for fused output publisher

@@ -38,10 +38,14 @@ flowchart LR
 | `target_frame` | `string` | `"base_link"` | Frame into which all input point clouds are transformed before fusion |
 | `input_topics` | `string[]` | `[]` | Point-cloud topics to fuse |
 | `input_transport_hints` | `string[]` | `[]` | Transport hint for each input topic; unspecified entries use raw |
-| `sync_queue_size` | `int` | `3` | Queue depth for approximate-time synchronization |
+| `sync_mode` | `string` | `"approximate"` | Synchronization policy: approximate or partial |
+| `partial_sync.publish_rate_hz` | `float` | `0.0` | Maximum publication rate in partial mode [Hz]; must be positive |
+| `partial_sync.timeout_sec` | `float` | `0.01` | Collection wait after the first pending cloud [s] |
+| `partial_sync.max_age_sec` | `float` | `0.2` | Maximum measurement age or future timestamp offset [s]; must be positive and at least `timeout_sec` |
+| `sync_queue_size` | `int` | `3` | Input queue depth in approximate mode |
 | `output_queue_size` | `int` | `10` | Queue depth for the fused output publisher |
 | `output_fields` | `string[]` | `[]` | Fields retained in the fused output; an empty list retains all input fields |
-| `output_stamp_mode` | `string` | `"earliest"` | Fused timestamp selection: earliest, latest, mean, or input0 |
+| `output_stamp_mode` | `string` | `"earliest"` | Fused timestamp selection: earliest, latest, mean, or input0; input0 requires approximate mode |
 | `fixed_points_per_input_cloud` | `int` | `0` | Runtime-reconfigurable maximum valid point count per input cloud; 0 disables the limit |
 | `use_cuda` | `bool` | `true` | Runtime-reconfigurable backend selection; true uses CUDA and false uses CPU |
 | `motion_compensation.enable` | `bool` | `false` | Compensate inter-sensor capture skew and motion during each scan |
@@ -58,6 +62,42 @@ flowchart LR
 | `range_limits.z_max` | `float` | `20.0` | Maximum z coordinate in target_frame to keep [m] |
 | `max_time_diff_sec` | `float` | `0.05` | Maximum timestamp spread across a synchronized input batch in seconds |
 | `age_penalty` | `float` | `0.1` | Age penalty used by the approximate-time synchronizer |
+
+#### Synchronization
+
+In `approximate` mode, each batch requires a timestamp-matched cloud from every
+configured input. The slowest input limits the output rate. A single input is
+processed directly.
+
+In `partial` mode, the first cloud starts a collection window of
+`partial_sync.timeout_sec`. The available inputs are then fused, subject to
+`partial_sync.publish_rate_hz`. While waiting, each topic retains its newest cloud.
+The batch is anchored at the newest timestamp and must fit `max_time_diff_sec`.
+Selected scans are consumed once; stale, duplicate, and older unmatched scans are
+discarded. Empty batches are not published.
+
+Example configuration for sensors with different rates or missing scans:
+
+```yaml
+/**:
+  ros__parameters:
+    sync_mode: partial
+    partial_sync:
+      publish_rate_hz: 20.0
+      timeout_sec: 0.01
+      max_age_sec: 0.2
+    max_time_diff_sec: 0.01
+    output_stamp_mode: earliest
+```
+
+Partial mode requires input timestamps synchronized with the node's ROS clock.
+Collection, freshness checks, and rate limiting follow that clock, including
+`use_sim_time`. Backwards clock jumps clear pending data and timestamp history.
+Choose the collection timeout to cover delivery skew and the maximum age to cover
+acceptable measurement latency, including collection and rate-limit delays.
+
+Partial subscriptions use sensor-data QoS (best effort); approximate subscriptions
+use default QoS (reliable). Synchronization parameters are set at startup.
 
 ## Launch Files
 
