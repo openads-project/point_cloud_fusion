@@ -31,7 +31,7 @@
       deskewed_inputs: [false, false]
       tf_timeout_sec: 0.1 # Per-lookup timeout; unavailable motion TF falls back to rigid fusion
     object_motion_compensation:
-      enable: false # Requires motion_compensation.enable and acquisition XYZ in the sensor frame.
+      enable: false # Requires motion_compensation.enable and sensor-frame XYZ (raw or deskewed to header.stamp).
       # Absolute radial velocity in m/s only; relative velocities are not supported. Tangential motion is unknown.
       velocity_field: velocity # Missing/NaN velocities leave points unchanged; output fill values are never measurements.
       # velocity_fields: ["velocity", ""] # Optional per-input override in input_topics order; empty entries disable correction.

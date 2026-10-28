@@ -288,6 +288,69 @@ class HeterogeneousFusion : public testing::TestWithParam<Configuration> {
     checkObjectPoint(21, 10.0F);
   }
 
+  void checkMixedDatatypeCalibration(bool explicit_fields) {
+    std::vector<rclcpp::Parameter> parameters{
+        rclcpp::Parameter("feature_calibration.enable", true),
+        rclcpp::Parameter("feature_calibration.field", "intensity"),
+        rclcpp::Parameter("feature_calibration.leading_inputs", std::vector<std::string>{namespace_ + "/ouster"}),
+        rclcpp::Parameter("feature_calibration.follower_inputs", std::vector<std::string>{namespace_ + "/aeva"}),
+        rclcpp::Parameter("feature_calibration.minimum_samples", 100),
+        rclcpp::Parameter("feature_calibration.window_samples", 100),
+        rclcpp::Parameter("feature_calibration.update_interval_sec", 0.1),
+        rclcpp::Parameter("missing_field_fill_values", std::vector<std::string>{"intensity=65535"})};
+    if (explicit_fields) {
+      parameters.emplace_back("output_fields", std::vector<std::string>{"intensity", "z", "x", "y"});
+    }
+    start(parameters);
+    if (IsSkipped() || HasFatalFailure()) return;
+    const auto make_cloud = [](bool follower) {
+      auto cloud = syntheticCloud(follower);
+      cloud.width = 100;
+      cloud.row_step = cloud.width * cloud.point_step;
+      cloud.data.assign(cloud.row_step, 0);
+      if (!follower) {
+        for (auto& f : cloud.fields) {
+          if (f.name == "intensity") f.datatype = Field::UINT16;
+        }
+      }
+      for (std::size_t point = 0; point < cloud.width; ++point) {
+        write(cloud, point, follower ? 20 : 0, static_cast<float>(point + (follower ? 1 : 1001)));
+        if (follower) write(cloud, point, 4, static_cast<float>(point));
+        else write(cloud, point, 12, static_cast<uint16_t>(point + 100));
+      }
+      return cloud;
+    };
+    const auto follower = make_cloud(true);
+    const auto leader = make_cloud(false);
+    bool calibrated = false;
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (!calibrated && std::chrono::steady_clock::now() < deadline) {
+      fuse(follower, leader);
+      if (HasFatalFailure()) return;
+      const auto* x = point_cloud_fusion::detail::findField(*output_, "x");
+      const auto* intensity = point_cloud_fusion::detail::findField(*output_, "intensity");
+      ASSERT_NE(x, nullptr);
+      ASSERT_NE(intensity, nullptr);
+      ASSERT_EQ(intensity->datatype, Field::UINT16);
+      ASSERT_EQ(output_->width, 200U);
+      for (std::size_t point = 0; point < output_->width; ++point) {
+        const float position = read<float>(*output_, point, x->offset);
+        const uint16_t value = read<uint16_t>(*output_, point, intensity->offset);
+        if (position >= 1001.0F) EXPECT_EQ(value, static_cast<uint16_t>(position - 1001.0F + 100.0F));
+        if (position == 1.0F && value == 100U) calibrated = true;
+      }
+    }
+    ASSERT_TRUE(calibrated) << "Mixed-datatype feature mapping did not become active";
+    const auto* x = point_cloud_fusion::detail::findField(*output_, "x");
+    const auto* intensity = point_cloud_fusion::detail::findField(*output_, "intensity");
+    for (std::size_t point = 0; point < output_->width; ++point) {
+      const float position = read<float>(*output_, point, x->offset);
+      if (position < 1001.0F) {
+        EXPECT_EQ(read<uint16_t>(*output_, point, intensity->offset), static_cast<uint16_t>(position - 1.0F + 100.0F));
+      }
+    }
+  }
+
   void checkDeskewedInput(bool aeva_deskewed) {
     // deskewed_inputs follows input_topics order, which depends on the fixture.
     const std::vector<bool> deskewed =
@@ -554,6 +617,10 @@ TEST_P(HeterogeneousFusion, SubsamplingKeepsVelocityAttachedToSelectedPoints) {
   for (int i = 0; i < 20; ++i) expected.insert(expected.end(), {1, 2, 3, 4});
   checkOutput(expected);
 }
+
+TEST_P(HeterogeneousFusion, MixedDatatypeCalibrationRetainsFieldInUnion) { checkMixedDatatypeCalibration(false); }
+
+TEST_P(HeterogeneousFusion, MixedDatatypeCalibrationPreservesLeadersWithExplicitFields) { checkMixedDatatypeCalibration(true); }
 
 TEST_P(HeterogeneousFusion, FeatureCalibrationPreservesNonFiniteMeasurements) {
   start({rclcpp::Parameter("feature_calibration.enable", true),
@@ -938,6 +1005,33 @@ TEST_P(HeterogeneousFusion, ObjectMotionCombinesWithEgoTranslationWithoutDoubleC
   checkObjectPoint(20, 9.7F);
   checkObjectPoint(21, 10.2F);
   checkObjectPoint(22, 10.7F);
+}
+
+TEST_P(HeterogeneousFusion, DeskewedObjectMotionUsesAcquisitionOriginDuringSidewaysEgoMotion) {
+  const std::vector<bool> deskewed = GetParam().aeva_first ? std::vector<bool>{true, false} : std::vector<bool>{false, true};
+  start({rclcpp::Parameter("motion_compensation.enable", true), rclcpp::Parameter("motion_compensation.fixed_frame", "map"),
+         rclcpp::Parameter("motion_compensation.deskewed_inputs", deskewed),
+         rclcpp::Parameter("object_motion_compensation.enable", true)});
+  if (IsSkipped() || HasFatalFailure()) return;
+  tf2_ros::TransformBroadcaster broadcaster(driver_);
+  for (const int32_t seconds : {98, 107}) {
+    geometry_msgs::msg::TransformStamped transform;
+    transform.header.stamp.sec = seconds;
+    transform.header.frame_id = "map";
+    transform.child_frame_id = "base_link";
+    transform.transform.translation.y = 10.0 * (seconds - 100);
+    transform.transform.rotation.w = 1.0;
+    broadcaster.sendTransform(transform);
+  }
+  executor_->spin_all(100ms);
+  auto aeva = objectCloud();
+  // At acquisition the sensor was 1m sideways from its header pose.
+  // The driver publishes the raw (10,0,0) ray as deskewed (10,1,0).
+  for (std::size_t point = 0; point < 4; ++point) write(aeva, point, 28, 1.0F);
+  fuse(aeva);
+  checkObjectPoint(20, 9.5F, 1.0F);
+  checkObjectPoint(21, 10.0F, 1.0F);
+  checkObjectPoint(22, 10.5F, 1.0F);
 }
 
 TEST_P(HeterogeneousFusion, DeskewedInputIsNotDeskewedTwice) { checkDeskewedInput(true); }

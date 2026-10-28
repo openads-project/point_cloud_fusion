@@ -47,6 +47,35 @@ std::vector<Field> ousterFields() {
           field("ring", 20, Field::UINT16)};
 }
 
+TEST(PointCloudLayout, CalibrationUsesLeaderDatatypeAndConvertsFollowerMeasurements) {
+  const auto leader = cloud(16, {field("x", 0), field("y", 4), field("z", 8), field("reflectivity", 12, Field::UINT16)});
+  const auto follower = cloud(20, {field("reflectivity", 0), field("x", 4), field("y", 8), field("z", 12)});
+  const auto* descriptor = point_cloud_fusion::detail::findField(*leader, "reflectivity");
+  for (const bool leader_first : {false, true}) {
+    const std::vector<Cloud::ConstSharedPtr> inputs = leader_first ? std::vector<Cloud::ConstSharedPtr>{leader, follower}
+                                                                 : std::vector<Cloud::ConstSharedPtr>{follower, leader};
+    for (const auto& selection : {std::vector<std::string>{}, std::vector<std::string>{"reflectivity", "x", "y", "z"}}) {
+      const auto layout = point_cloud_fusion::detail::buildBatchLayout(inputs, selection, "t", {{"reflectivity", 65535}}, descriptor);
+      ASSERT_TRUE(layout.fill_error.empty());
+      EXPECT_TRUE(layout.conflicting_fields.empty());
+      const auto output = std::find_if(layout.fields.begin(), layout.fields.end(),
+                                       [](const auto& f) { return f.name == "reflectivity"; });
+      ASSERT_NE(output, layout.fields.end());
+      EXPECT_EQ(output->datatype, Field::UINT16);
+      const auto& reference = layout.inputs[leader_first ? 0 : 1];
+      const auto& converted = layout.inputs[leader_first ? 1 : 0];
+      EXPECT_TRUE(reference.conversions.empty());
+      EXPECT_TRUE(reference.field_fills.empty());
+      ASSERT_EQ(converted.conversions.size(), 1U);
+      EXPECT_EQ(converted.conversions[0].source_offset, 0U);
+      EXPECT_EQ(converted.conversions[0].destination_offset, output->offset);
+      EXPECT_EQ(converted.conversions[0].source_datatype, Field::FLOAT32);
+      EXPECT_EQ(converted.conversions[0].destination_datatype, Field::UINT16);
+      EXPECT_TRUE(converted.field_fills.empty());
+    }
+  }
+}
+
 TEST(PointCloudLayout, HomogeneousCloudsKeepWholePointFastPath) {
   const auto first = cloud(24, ousterFields());
   const auto second = cloud(24, ousterFields());

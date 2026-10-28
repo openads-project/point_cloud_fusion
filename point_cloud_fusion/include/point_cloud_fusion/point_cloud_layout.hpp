@@ -59,6 +59,13 @@ struct FieldFill {
   std::vector<uint8_t> bytes;
 };
 
+struct FieldConversion {
+  uint32_t source_offset{0};
+  uint32_t destination_offset{0};
+  uint8_t source_datatype{0};
+  uint8_t destination_datatype{0};
+};
+
 struct InputLayout {
   bool valid{false};
   uint32_t x_offset{0};
@@ -67,6 +74,7 @@ struct InputLayout {
   int time_offset{-1};
   bool whole_point_copy{false};
   std::vector<FieldCopy> copies;
+  std::vector<FieldConversion> conversions;
   std::vector<FieldFill> field_fills;
   std::vector<std::string> zero_filled_fields;
   std::string rejection_reason;
@@ -278,12 +286,14 @@ inline bool validXyzField(const sensor_msgs::msg::PointField* field, uint32_t po
  * @param requested_fields Optional ordered list of fields to include.
  * @param time_field_name Name of the per-point time-offset field.
  * @param fill_values Overrides; missing floats default to NaN, integers to zero.
+ * @param calibration_field Optional leader descriptor retained across scalar datatype differences.
  * @return Output layout and copy plan for every input cloud.
  */
 inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointCloud2::ConstSharedPtr>& clouds,
                                     const std::vector<std::string>& requested_fields,
                                     const std::string& time_field_name,
-                                    const MissingFieldFillValues& fill_values = {}) {
+                                    const MissingFieldFillValues& fill_values = {},
+                                    const sensor_msgs::msg::PointField* calibration_field = nullptr) {
   BatchLayout result;
   result.inputs.resize(clouds.size());
 
@@ -336,7 +346,9 @@ inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointClo
           break;
         }
       }
-      if (descriptor != nullptr) selected.push_back(*descriptor);
+      if (descriptor != nullptr) {
+        selected.push_back(calibration_field && name == calibration_field->name ? *calibration_field : *descriptor);
+      }
     }
   } else if (result.homogeneous_fast_path) {
     selected = first.fields;
@@ -356,7 +368,9 @@ inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointClo
       }
     }
     for (const auto& name : order) {
-      if (conflicts.count(name) != 0U) {
+      if (calibration_field && name == calibration_field->name) {
+        selected.push_back(*calibration_field);
+      } else if (conflicts.count(name) != 0U) {
         result.conflicting_fields.push_back(name);
       } else {
         selected.push_back(descriptors.at(name));
@@ -399,6 +413,9 @@ inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointClo
       const auto* source = findField(cloud, destination.name);
       if (source != nullptr && sameType(*source, destination) && validField(*source, cloud.point_step)) {
         input.copies.push_back({source->offset, destination.offset, fieldDatatypeSize(source->datatype) * source->count});
+      } else if (calibration_field && destination.name == calibration_field->name && source != nullptr &&
+                 source->count == 1 && validField(*source, cloud.point_step)) {
+        input.conversions.push_back({source->offset, destination.offset, source->datatype, destination.datatype});
       } else if (const auto fill = fill_values.find(destination.name);
                  fill != fill_values.end() || destination.datatype == sensor_msgs::msg::PointField::FLOAT32 ||
                  destination.datatype == sensor_msgs::msg::PointField::FLOAT64) {

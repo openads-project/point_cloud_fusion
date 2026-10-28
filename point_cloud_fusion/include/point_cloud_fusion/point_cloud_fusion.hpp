@@ -131,6 +131,10 @@ class PointCloudFusion : public rclcpp::Node {
 
   using PointCloudMsg = sensor_msgs::msg::PointCloud2;
 
+  /** Choose the calibration output datatype from a valid leader, independent of input order. */
+  std::optional<sensor_msgs::msg::PointField> calibrationOutputField(
+      const std::vector<PointCloudMsg::ConstSharedPtr>& msgs) const;
+
   /** Warn, with throttling, about fill overrides unused by the current output layout. */
   void warnUnusedFillOverrides(const std::vector<std::string>& fields) const;
 
