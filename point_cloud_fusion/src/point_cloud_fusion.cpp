@@ -261,7 +261,8 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 std::nullopt,                                    // step_value
                                 "Use 1e-9 for Ouster nanosecond offsets.");      // additional_constraints
   this->declareAndLoadParameter("motion_compensation.deskewed_inputs", motion_compensation_deskewed_inputs_,
-                                "Per input_topics entry: true if its driver already deskewed the points to header.stamp",
+                                "Per input_topics entry: true if its driver already deskewed the points to header.stamp. "
+                                "Must match the drivers; a wrong entry deskews twice or not at all",
                                 false,                                           // add_to_auto_reconfigurable_params
                                 false,                                           // is_required
                                 true,                                            // read_only

@@ -49,7 +49,7 @@ flowchart LR
 | `motion_compensation.fixed_frame` | `string` | `"map"` | World-fixed TF frame used to compare sensor poses at different times |
 | `motion_compensation.time_field` | `string` | `"t"` | UINT32 point field containing an offset from the cloud header stamp |
 | `motion_compensation.time_scale_sec` | `float` | `1.0e-9` | Seconds represented by one unit of the per-point time field |
-| `motion_compensation.deskewed_inputs` | `bool[]` | `[]` | Per `input_topics` entry: true if its driver already deskewed the cloud to the header stamp, so scan deskewing is skipped. **Must match the drivers**; a wrong entry deskews twice or not at all. Empty means no input is deskewed |
+| `motion_compensation.deskewed_inputs` | `bool[]` | `[]` | Per input_topics entry: true if its driver already deskewed the points to header.stamp. Must match the drivers; a wrong entry deskews twice or not at all |
 | `motion_compensation.tf_timeout_sec` | `float` | `0.1` | Timeout for the first motion-compensation TF failure [s] |
 | `object_motion_compensation.enable` | `bool` | `false` | Advance points to the output timestamp using absolute radial velocity |
 | `object_motion_compensation.velocity_field` | `string` | `"velocity"` | Scalar FLOAT32/FLOAT64 absolute radial velocity field in m/s |
