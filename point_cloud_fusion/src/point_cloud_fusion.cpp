@@ -1861,9 +1861,11 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
       }
       if (pack_calibration) {
         float value = 0.0F;
-        if (readScalarField(source + calibration_field->offset, calibration_field->datatype, msg->is_bigendian, value)) {
-          std::memcpy(byteOffset(destination, calibration_scratch_offset), &value, sizeof(value));
+        if (!readScalarField(source + calibration_field->offset, calibration_field->datatype, msg->is_bigendian, value)) {
+          value = std::numeric_limits<float>::quiet_NaN();
         }
+        // Non-finite measurements must skip calibration and retain the copied field.
+        std::memcpy(byteOffset(destination, calibration_scratch_offset), &value, sizeof(value));
       }
       if (pack_velocity) {
         const float velocity = loadObjectVelocity(byteOffset(source, static_cast<std::size_t>(object.velocity_offset)),

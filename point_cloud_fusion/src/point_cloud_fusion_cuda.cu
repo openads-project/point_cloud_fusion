@@ -74,10 +74,12 @@ __device__ inline void storeCalibrationValue(uint8_t* destination, int datatype,
       storeUnaligned(destination, static_cast<unsigned short>(fminf(65535.0F, fmaxf(0.0F, roundf(value)))));
       break;
     case 5:
-      storeUnaligned(destination, static_cast<int>(roundf(value)));
+      storeUnaligned(destination,
+                     static_cast<int>(fmin(2147483647.0, fmax(-2147483648.0, round(static_cast<double>(value))))));
       break;
     case 6:
-      storeUnaligned(destination, static_cast<unsigned int>(fmaxf(0.0F, roundf(value))));
+      storeUnaligned(destination,
+                     static_cast<unsigned int>(fmin(4294967295.0, fmax(0.0, round(static_cast<double>(value))))));
       break;
     case 7:
       storeUnaligned(destination, value);

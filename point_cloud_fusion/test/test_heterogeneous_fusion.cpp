@@ -555,6 +555,74 @@ TEST_P(HeterogeneousFusion, SubsamplingKeepsVelocityAttachedToSelectedPoints) {
   checkOutput(expected);
 }
 
+TEST_P(HeterogeneousFusion, FeatureCalibrationPreservesNonFiniteMeasurements) {
+  start({rclcpp::Parameter("feature_calibration.enable", true),
+         rclcpp::Parameter("feature_calibration.field", "intensity"),
+         rclcpp::Parameter("feature_calibration.leading_inputs", std::vector<std::string>{namespace_ + "/ouster"}),
+         rclcpp::Parameter("feature_calibration.follower_inputs", std::vector<std::string>{namespace_ + "/aeva"}),
+         rclcpp::Parameter("feature_calibration.minimum_samples", 100),
+         rclcpp::Parameter("feature_calibration.window_samples", 100),
+         rclcpp::Parameter("feature_calibration.update_interval_sec", 0.1)});
+  if (IsSkipped() || HasFatalFailure()) return;
+
+  const auto make_cloud = [](bool follower) {
+    auto cloud = syntheticCloud(follower);
+    cloud.width = follower ? 103 : 100;
+    cloud.row_step = cloud.width * cloud.point_step;
+    cloud.data.assign(cloud.row_step, 0);
+    for (std::size_t point = 0; point < cloud.width; ++point) {
+      write(cloud, point, follower ? 20 : 0, follower ? 1.0F : 11.0F);
+      write(cloud, point, follower ? 4 : 12, static_cast<float>(point + (follower ? 0 : 100)));
+    }
+    if (follower) {
+      const std::array<float, 3> invalid{std::numeric_limits<float>::quiet_NaN(),
+                                        std::numeric_limits<float>::infinity(),
+                                        -std::numeric_limits<float>::infinity()};
+      for (std::size_t index = 0; index < invalid.size(); ++index) {
+        write(cloud, 100 + index, 20, static_cast<float>(2 + index));
+        write(cloud, 100 + index, 4, invalid[index]);
+      }
+    }
+    return cloud;
+  };
+  const auto follower = make_cloud(true);
+  const auto leader = make_cloud(false);
+  bool calibrated = false;
+  const auto deadline = std::chrono::steady_clock::now() + 5s;
+  while (!calibrated && std::chrono::steady_clock::now() < deadline) {
+    fuse(follower, leader);
+    if (HasFatalFailure()) return;
+    const auto* x = point_cloud_fusion::detail::findField(*output_, "x");
+    const auto* intensity = point_cloud_fusion::detail::findField(*output_, "intensity");
+    ASSERT_NE(x, nullptr);
+    ASSERT_NE(intensity, nullptr);
+    for (std::size_t point = 0; point < output_->width; ++point) {
+      if (read<float>(*output_, point, x->offset) == 1.0F && read<float>(*output_, point, intensity->offset) >= 100.0F) {
+        calibrated = true;
+      }
+    }
+  }
+  ASSERT_TRUE(calibrated) << "Feature mapping did not become active";
+  const auto* x = point_cloud_fusion::detail::findField(*output_, "x");
+  const auto* intensity = point_cloud_fusion::detail::findField(*output_, "intensity");
+  ASSERT_NE(x, nullptr);
+  ASSERT_NE(intensity, nullptr);
+  std::size_t invalid_count = 0;
+  for (std::size_t point = 0; point < output_->width; ++point) {
+    const float position = read<float>(*output_, point, x->offset);
+    const float value = read<float>(*output_, point, intensity->offset);
+    if (position == 2.0F) {
+      EXPECT_TRUE(std::isnan(value));
+      ++invalid_count;
+    } else if (position == 3.0F || position == 4.0F) {
+      EXPECT_TRUE(std::isinf(value));
+      EXPECT_EQ(std::signbit(value), position == 4.0F);
+      ++invalid_count;
+    }
+  }
+  EXPECT_EQ(invalid_count, 3U);
+}
+
 TEST_P(HeterogeneousFusion, MotionCompensationWithPrivateTimeFieldRetainsVelocity) {
   start({rclcpp::Parameter("motion_compensation.enable", true), rclcpp::Parameter("motion_compensation.fixed_frame", "base_link"),
          rclcpp::Parameter("output_fields",

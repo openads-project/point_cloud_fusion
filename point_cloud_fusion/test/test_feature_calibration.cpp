@@ -79,6 +79,32 @@ TEST(FeatureCalibration, ScalarConversionSaturatesIntegerOutput) {
   EXPECT_FLOAT_EQ(value, 65535.0F);
 }
 
+TEST(FeatureCalibration, ScalarConversionSaturates32BitIntegerBoundaries) {
+  std::uint8_t bytes[4]{};
+  for (const float value : {2147483648.0F, std::numeric_limits<float>::max()}) {
+    ASSERT_TRUE(writeScalarField(bytes, sensor_msgs::msg::PointField::INT32, false, value));
+    int32_t result{};
+    std::memcpy(&result, bytes, sizeof(result));
+    EXPECT_EQ(result, std::numeric_limits<int32_t>::max());
+  }
+  for (const float value : {-2147483648.0F, -std::numeric_limits<float>::max()}) {
+    ASSERT_TRUE(writeScalarField(bytes, sensor_msgs::msg::PointField::INT32, false, value));
+    int32_t result{};
+    std::memcpy(&result, bytes, sizeof(result));
+    EXPECT_EQ(result, std::numeric_limits<int32_t>::lowest());
+  }
+  for (const float value : {4294967296.0F, std::numeric_limits<float>::max()}) {
+    ASSERT_TRUE(writeScalarField(bytes, sensor_msgs::msg::PointField::UINT32, false, value));
+    uint32_t result{};
+    std::memcpy(&result, bytes, sizeof(result));
+    EXPECT_EQ(result, std::numeric_limits<uint32_t>::max());
+  }
+  ASSERT_TRUE(writeScalarField(bytes, sensor_msgs::msg::PointField::UINT32, false, -1.0F));
+  uint32_t result{};
+  std::memcpy(&result, bytes, sizeof(result));
+  EXPECT_EQ(result, 0U);
+}
+
 TEST(FeatureCalibration, WorkerPublishesFollowerMappingAsynchronously) {
   DistributionFeatureCalibrator::Config config;
   config.field = "reflectivity";

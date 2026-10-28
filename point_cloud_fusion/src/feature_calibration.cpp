@@ -51,9 +51,9 @@ T saturate(float value) {
   if constexpr (std::is_floating_point_v<T>) {
     return static_cast<T>(value);
   } else {
-    const float rounded = std::round(value);
-    return static_cast<T>(std::clamp(rounded, static_cast<float>(std::numeric_limits<T>::lowest()),
-                                     static_cast<float>(std::numeric_limits<T>::max())));
+    const double rounded = std::round(static_cast<double>(value));
+    return static_cast<T>(std::clamp(rounded, static_cast<double>(std::numeric_limits<T>::lowest()),
+                                     static_cast<double>(std::numeric_limits<T>::max())));
   }
 }
 
