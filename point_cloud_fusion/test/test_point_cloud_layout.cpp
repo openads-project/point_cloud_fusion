@@ -53,13 +53,14 @@ TEST(PointCloudLayout, CalibrationUsesLeaderDatatypeAndConvertsFollowerMeasureme
   const auto* descriptor = point_cloud_fusion::detail::findField(*leader, "reflectivity");
   for (const bool leader_first : {false, true}) {
     const std::vector<Cloud::ConstSharedPtr> inputs = leader_first ? std::vector<Cloud::ConstSharedPtr>{leader, follower}
-                                                                 : std::vector<Cloud::ConstSharedPtr>{follower, leader};
+                                                                   : std::vector<Cloud::ConstSharedPtr>{follower, leader};
     for (const auto& selection : {std::vector<std::string>{}, std::vector<std::string>{"reflectivity", "x", "y", "z"}}) {
-      const auto layout = point_cloud_fusion::detail::buildBatchLayout(inputs, selection, "t", {{"reflectivity", 65535}}, descriptor);
+      const auto layout =
+          point_cloud_fusion::detail::buildBatchLayout(inputs, selection, "t", {{"reflectivity", 65535}}, descriptor);
       ASSERT_TRUE(layout.fill_error.empty());
       EXPECT_TRUE(layout.conflicting_fields.empty());
-      const auto output = std::find_if(layout.fields.begin(), layout.fields.end(),
-                                       [](const auto& f) { return f.name == "reflectivity"; });
+      const auto output =
+          std::find_if(layout.fields.begin(), layout.fields.end(), [](const auto& f) { return f.name == "reflectivity"; });
       ASSERT_NE(output, layout.fields.end());
       EXPECT_EQ(output->datatype, Field::UINT16);
       const auto& reference = layout.inputs[leader_first ? 0 : 1];

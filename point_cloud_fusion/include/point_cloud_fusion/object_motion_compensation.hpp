@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 
@@ -19,7 +20,7 @@ struct ObjectMotion {
   float doppler_sign{1.0F};
   float max_time_offset_sec{0.2F};
   float max_speed_mps{100.0F};
-  float end_ray_origin[3]{0.0F, 0.0F, 0.0F};
+  std::array<float, 3> end_ray_origin{0.0F, 0.0F, 0.0F};
   uint32_t ray_origin_max_time_offset{0};
 };
 
@@ -42,10 +43,12 @@ inline bool compensateObjectMotion(const ObjectMotion& motion, float velocity, u
       std::abs(dt) > motion.max_time_offset_sec || velocity == 0.0F || dt == 0.0F) {
     return false;
   }
-  const float origin_alpha = motion.ray_origin_max_time_offset > 0
-                                 ? (point_time >= motion.ray_origin_max_time_offset
-                                        ? 1.0F : static_cast<float>(point_time) / motion.ray_origin_max_time_offset)
-                                 : 0.0F;
+  float origin_alpha = 0.0F;
+  if (motion.ray_origin_max_time_offset > 0) {
+    origin_alpha = point_time >= motion.ray_origin_max_time_offset
+                       ? 1.0F
+                       : static_cast<float>(point_time) / static_cast<float>(motion.ray_origin_max_time_offset);
+  }
   const float ray_x = x - origin_alpha * motion.end_ray_origin[0];
   const float ray_y = y - origin_alpha * motion.end_ray_origin[1];
   const float ray_z = z - origin_alpha * motion.end_ray_origin[2];

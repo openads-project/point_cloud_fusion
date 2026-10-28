@@ -315,8 +315,10 @@ class HeterogeneousFusion : public testing::TestWithParam<Configuration> {
       }
       for (std::size_t point = 0; point < cloud.width; ++point) {
         write(cloud, point, follower ? 20 : 0, static_cast<float>(point + (follower ? 1 : 1001)));
-        if (follower) write(cloud, point, 4, static_cast<float>(point));
-        else write(cloud, point, 12, static_cast<uint16_t>(point + 100));
+        if (follower)
+          write(cloud, point, 4, static_cast<float>(point));
+        else
+          write(cloud, point, 12, static_cast<uint16_t>(point + 100));
       }
       return cloud;
     };
@@ -623,8 +625,7 @@ TEST_P(HeterogeneousFusion, MixedDatatypeCalibrationRetainsFieldInUnion) { check
 TEST_P(HeterogeneousFusion, MixedDatatypeCalibrationPreservesLeadersWithExplicitFields) { checkMixedDatatypeCalibration(true); }
 
 TEST_P(HeterogeneousFusion, FeatureCalibrationPreservesNonFiniteMeasurements) {
-  start({rclcpp::Parameter("feature_calibration.enable", true),
-         rclcpp::Parameter("feature_calibration.field", "intensity"),
+  start({rclcpp::Parameter("feature_calibration.enable", true), rclcpp::Parameter("feature_calibration.field", "intensity"),
          rclcpp::Parameter("feature_calibration.leading_inputs", std::vector<std::string>{namespace_ + "/ouster"}),
          rclcpp::Parameter("feature_calibration.follower_inputs", std::vector<std::string>{namespace_ + "/aeva"}),
          rclcpp::Parameter("feature_calibration.minimum_samples", 100),
@@ -642,9 +643,8 @@ TEST_P(HeterogeneousFusion, FeatureCalibrationPreservesNonFiniteMeasurements) {
       write(cloud, point, follower ? 4 : 12, static_cast<float>(point + (follower ? 0 : 100)));
     }
     if (follower) {
-      const std::array<float, 3> invalid{std::numeric_limits<float>::quiet_NaN(),
-                                        std::numeric_limits<float>::infinity(),
-                                        -std::numeric_limits<float>::infinity()};
+      const std::array<float, 3> invalid{std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity(),
+                                         -std::numeric_limits<float>::infinity()};
       for (std::size_t index = 0; index < invalid.size(); ++index) {
         write(cloud, 100 + index, 20, static_cast<float>(2 + index));
         write(cloud, 100 + index, 4, invalid[index]);

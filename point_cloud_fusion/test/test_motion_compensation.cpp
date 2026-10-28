@@ -103,7 +103,7 @@ TEST(ObjectMotion, DeskewedTranslationPreservesAcquisitionRay) {
 
   ObjectMotion motion;
   motion.ray_origin_max_time_offset = transform.ray_origin_max_time_offset;
-  std::copy(transform.end_ray_origin.begin(), transform.end_ray_origin.end(), motion.end_ray_origin);
+  motion.end_ray_origin = transform.end_ray_origin;
   for (const uint32_t point_time : {50000000U, 100000000U}) {
     float x = 10.0F, y = static_cast<float>(point_time) * 1.0e-8F, z = 0.0F;
     const float expected_y = y;
@@ -143,7 +143,7 @@ TEST(ObjectMotion, DeskewedAndRawCorrectionAgreeWithTranslationAndRotation) {
     transformPointInterpolated(inverse_rotation, 0, x - 10.0F, y - 20.0F, z - 3.0F, x, y, z);
     ObjectMotion motion;
     motion.ray_origin_max_time_offset = deskewed.ray_origin_max_time_offset;
-    std::copy(deskewed.end_ray_origin.begin(), deskewed.end_ray_origin.end(), motion.end_ray_origin);
+    motion.end_ray_origin = deskewed.end_ray_origin;
     ASSERT_TRUE(compensateObjectMotion(motion, 5.0F, time, x, y, z));
     transformPointInterpolated(deskewed, time, x, y, z, x, y, z);
     float expected_x = 3.0F, expected_y = 4.0F, expected_z = 1.0F;

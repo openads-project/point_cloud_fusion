@@ -87,11 +87,10 @@ inline void retainDeskewedPose(MotionTransform& transform) {
   MotionTransform inverse_rotation;
   inverse_rotation.start_quaternion = {-transform.start_quaternion[0], -transform.start_quaternion[1],
                                        -transform.start_quaternion[2], transform.start_quaternion[3]};
-  transformPointInterpolated(inverse_rotation, 0,
-                             transform.end_translation[0] - transform.start_translation[0],
+  transformPointInterpolated(inverse_rotation, 0, transform.end_translation[0] - transform.start_translation[0],
                              transform.end_translation[1] - transform.start_translation[1],
-                             transform.end_translation[2] - transform.start_translation[2],
-                             transform.end_ray_origin[0], transform.end_ray_origin[1], transform.end_ray_origin[2]);
+                             transform.end_translation[2] - transform.start_translation[2], transform.end_ray_origin[0],
+                             transform.end_ray_origin[1], transform.end_ray_origin[2]);
   transform.ray_origin_max_time_offset = transform.max_time_offset;
   transform.max_time_offset = 0;
   transform.end_translation = transform.start_translation;

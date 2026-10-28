@@ -144,18 +144,21 @@ inline void storeFloat(uint8_t* data, std::size_t offset, float value) {
 }
 
 /** Convert measured calibration scalars before an optional distribution mapping. */
-inline void copyConvertedFields(const uint8_t* source, uint8_t* destination,
+inline void copyConvertedFields(const uint8_t* source,
+                                uint8_t* destination,
                                 const point_cloud_fusion::detail::InputLayout& input,
-                                bool source_bigendian, bool destination_bigendian) {
+                                bool source_bigendian,
+                                bool destination_bigendian) {
   for (const auto& conversion : input.conversions) {
     float value = 0.0F;
     point_cloud_fusion::readScalarField(byteOffset(source, conversion.source_offset), conversion.source_datatype,
-                                       source_bigendian, value);
+                                        source_bigendian, value);
     // Integer fields cannot represent unknown floating measurements.
     if (!std::isfinite(value) && conversion.destination_datatype != sensor_msgs::msg::PointField::FLOAT32 &&
-        conversion.destination_datatype != sensor_msgs::msg::PointField::FLOAT64) value = 0.0F;
+        conversion.destination_datatype != sensor_msgs::msg::PointField::FLOAT64)
+      value = 0.0F;
     point_cloud_fusion::writeScalarField(byteOffset(destination, conversion.destination_offset), conversion.destination_datatype,
-                                        destination_bigendian, value);
+                                         destination_bigendian, value);
   }
 }
 
@@ -1272,8 +1275,8 @@ bool PointCloudFusion::prepareBatchMotionTransforms(const std::vector<PointCloud
     // Deskewed XYZ needs only the header pose, but radial object motion still
     // needs the acquisition origin expressed in that header frame.
     const bool deskewed = i < motion_compensation_deskewed_inputs_.size() && motion_compensation_deskewed_inputs_[i];
-    const bool needs_ray_origin = deskewed && object_motion_compensation_enable_ &&
-                                  prepareObjectMotion(*msgs[i], i, reference_stamp).velocity_offset >= 0;
+    const bool needs_ray_origin =
+        deskewed && object_motion_compensation_enable_ && prepareObjectMotion(*msgs[i], i, reference_stamp).velocity_offset >= 0;
     const int deskew_time_offset = deskewed && !needs_ray_origin ? -1 : time_field_offsets[i];
     if (!prepareMotionTransform(*msgs[i], reference_stamp, deskew_time_offset, timeout_sec, transforms[i])) {
       motion_tf_available_.store(false, std::memory_order_relaxed);
@@ -1369,10 +1372,11 @@ std::optional<sensor_msgs::msg::PointField> PointCloudFusion::calibrationOutputF
     if (index >= msgs.size() || !msgs[index]) continue;
     const auto& cloud = *msgs[index];
     const auto* field = detail::findField(cloud, feature_calibration_field_);
-    if (field && field->count == 1 && detail::validField(*field, cloud.point_step) &&
+    if (field != nullptr && field->count == 1 && detail::validField(*field, cloud.point_step) &&
         detail::validXyzField(detail::findField(cloud, "x"), cloud.point_step) &&
         detail::validXyzField(detail::findField(cloud, "y"), cloud.point_step) &&
-        detail::validXyzField(detail::findField(cloud, "z"), cloud.point_step)) return *field;
+        detail::validXyzField(detail::findField(cloud, "z"), cloud.point_step))
+      return *field;
   }
   return std::nullopt;
 }
@@ -1383,8 +1387,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   if (msgs.empty()) return nullptr;
 
   const auto calibration_field = calibrationOutputField(msgs);
-  const detail::BatchLayout layout = detail::buildBatchLayout(
-      msgs, output_fields_, motion_compensation_time_field_, missing_field_fills_, calibration_field ? &*calibration_field : nullptr);
+  const detail::BatchLayout layout =
+      detail::buildBatchLayout(msgs, output_fields_, motion_compensation_time_field_, missing_field_fills_,
+                               calibration_field ? &*calibration_field : nullptr);
   if (!layout.fill_error.empty()) {
     RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "%s; skipping batch", layout.fill_error.c_str());
     return nullptr;
@@ -1489,8 +1494,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     const bool apply_transform = batch_motion || msg->header.frame_id != target_frame_;
     auto object_motion = batch_motion ? prepareObjectMotion(*msg, input_index, chosen_stamp) : ObjectMotion{};
     object_motion.ray_origin_max_time_offset = motion_transforms[input_index].ray_origin_max_time_offset;
-    std::copy(motion_transforms[input_index].end_ray_origin.begin(), motion_transforms[input_index].end_ray_origin.end(),
-               object_motion.end_ray_origin);
+    object_motion.end_ray_origin = motion_transforms[input_index].end_ray_origin;
     tf2::Vector3 translation(0.0, 0.0, 0.0);
     tf2::Matrix3x3 rotation = tf2::Matrix3x3::getIdentity();
     if (!batch_motion && apply_transform) {
@@ -1759,12 +1763,12 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   if (!publish_time_field) processing_fills.erase(motion_compensation_time_field_);
   const auto calibration_field = calibrationOutputField(msgs);
   const auto* calibration_descriptor = calibration_field ? &*calibration_field : nullptr;
-  const detail::BatchLayout processing_layout = detail::buildBatchLayout(
-      msgs, processing_fields, motion_compensation_time_field_, processing_fills, calibration_descriptor);
-  const detail::BatchLayout output_layout =
-      publish_time_field ? processing_layout
-                         : detail::buildBatchLayout(msgs, output_fields_, motion_compensation_time_field_, missing_field_fills_,
-                                                    calibration_descriptor);
+  const detail::BatchLayout processing_layout = detail::buildBatchLayout(msgs, processing_fields, motion_compensation_time_field_,
+                                                                         processing_fills, calibration_descriptor);
+  const detail::BatchLayout output_layout = publish_time_field
+                                                ? processing_layout
+                                                : detail::buildBatchLayout(msgs, output_fields_, motion_compensation_time_field_,
+                                                                           missing_field_fills_, calibration_descriptor);
   if (!processing_layout.fill_error.empty() || !output_layout.fill_error.empty()) {
     const auto& error = processing_layout.fill_error.empty() ? output_layout.fill_error : processing_layout.fill_error;
     RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "CUDA: %s; skipping batch", error.c_str());
@@ -1997,7 +2001,7 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
     const int desired = fixed_points_per_input_cloud_ > 0 ? static_cast<int>(fixed_points_per_input_cloud_) : 0;
     const auto& motion = motion_transforms[i];
     packed_objects[i].ray_origin_max_time_offset = motion.ray_origin_max_time_offset;
-    std::copy(motion.end_ray_origin.begin(), motion.end_ray_origin.end(), packed_objects[i].end_ray_origin);
+    packed_objects[i].end_ray_origin = motion.end_ray_origin;
     const int cuda_time_offset = source_time_offsets[i] >= 0 ? packed_time_offset : -1;
     const int64_t time_rebase_units = stampDeltaInTimeUnits(msg->header.stamp, chosen_stamp, motion_compensation_time_scale_sec_);
     const auto mapping = i < calibration_mappings.size() ? calibration_mappings[i] : nullptr;

@@ -347,7 +347,7 @@ inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointClo
         }
       }
       if (descriptor != nullptr) {
-        selected.push_back(calibration_field && name == calibration_field->name ? *calibration_field : *descriptor);
+        selected.push_back(calibration_field != nullptr && name == calibration_field->name ? *calibration_field : *descriptor);
       }
     }
   } else if (result.homogeneous_fast_path) {
@@ -368,7 +368,7 @@ inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointClo
       }
     }
     for (const auto& name : order) {
-      if (calibration_field && name == calibration_field->name) {
+      if (calibration_field != nullptr && name == calibration_field->name) {
         selected.push_back(*calibration_field);
       } else if (conflicts.count(name) != 0U) {
         result.conflicting_fields.push_back(name);
@@ -413,7 +413,7 @@ inline BatchLayout buildBatchLayout(const std::vector<sensor_msgs::msg::PointClo
       const auto* source = findField(cloud, destination.name);
       if (source != nullptr && sameType(*source, destination) && validField(*source, cloud.point_step)) {
         input.copies.push_back({source->offset, destination.offset, fieldDatatypeSize(source->datatype) * source->count});
-      } else if (calibration_field && destination.name == calibration_field->name && source != nullptr &&
+      } else if (calibration_field != nullptr && destination.name == calibration_field->name && source != nullptr &&
                  source->count == 1 && validField(*source, cloud.point_step)) {
         input.conversions.push_back({source->offset, destination.offset, source->datatype, destination.datatype});
       } else if (const auto fill = fill_values.find(destination.name);
