@@ -295,6 +295,7 @@ class PointCloudFusion : public rclcpp::Node {
   std::string motion_compensation_fixed_frame_ = "map";
   std::string motion_compensation_time_field_ = "t";
   double motion_compensation_time_scale_sec_ = 1.0e-9;
+  std::vector<bool> motion_compensation_deskewed_inputs_;
   double motion_compensation_tf_timeout_sec_ = 0.1;
   bool object_motion_compensation_enable_ = false;
   std::string object_motion_velocity_field_ = "velocity";

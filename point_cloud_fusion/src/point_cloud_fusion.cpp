@@ -260,6 +260,23 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 1.0,                                             // to_value
                                 std::nullopt,                                    // step_value
                                 "Use 1e-9 for Ouster nanosecond offsets.");      // additional_constraints
+  this->declareAndLoadParameter("motion_compensation.deskewed_inputs", motion_compensation_deskewed_inputs_,
+                                "Per input_topics entry: true if its driver already deskewed the points to header.stamp",
+                                false,                                           // add_to_auto_reconfigurable_params
+                                false,                                           // is_required
+                                true,                                            // read_only
+                                std::nullopt, std::nullopt, std::nullopt,        // from_value, to_value, step_value
+                                "Length must be zero (no input deskewed) or match input_topics. A wrong entry "
+                                "silently deskews twice or not at all.");
+  if (!motion_compensation_deskewed_inputs_.empty() && motion_compensation_deskewed_inputs_.size() != input_topics_.size()) {
+    throw std::invalid_argument("motion_compensation.deskewed_inputs must match input_topics length");
+  }
+  for (std::size_t i = 0; i < motion_compensation_deskewed_inputs_.size(); ++i) {
+    if (motion_compensation_deskewed_inputs_[i]) {
+      RCLCPP_INFO(this->get_logger(), "Input '%s' is configured as already deskewed; motion compensation skips its scan deskewing",
+                  input_topics_[i].c_str());
+    }
+  }
   this->declareAndLoadParameter("motion_compensation.tf_timeout_sec", motion_compensation_tf_timeout_sec_,
                                 "Timeout for the first motion-compensation TF failure [s]",
                                 false,                                           // add_to_auto_reconfigurable_params
@@ -567,7 +584,7 @@ void PointCloudFusion::declareAndLoadParameter(const std::string& name,
     ss << "Loaded parameter '" << name << "': ";
     if constexpr (is_vector_v<T>) {
       ss << "[";
-      for (const auto& element : param) ss << element << (&element != &param.back() ? ", " : "");
+      for (std::size_t i = 0; i < param.size(); ++i) ss << (i > 0 ? ", " : "") << param[i];
       ss << "]";
     } else {
       ss << param;
@@ -582,7 +599,7 @@ void PointCloudFusion::declareAndLoadParameter(const std::string& name,
       ss << "Missing parameter '" << name << "', using default value: ";
       if constexpr (is_vector_v<T>) {
         ss << "[";
-        for (const auto& element : param) ss << element << (&element != &param.back() ? ", " : "");
+        for (std::size_t i = 0; i < param.size(); ++i) ss << (i > 0 ? ", " : "") << param[i];
         ss << "]";
       } else {
         ss << param;
@@ -1235,7 +1252,12 @@ bool PointCloudFusion::prepareBatchMotionTransforms(const std::vector<PointCloud
       continue;
     }
     prepared_any = true;
-    if (!prepareMotionTransform(*msgs[i], reference_stamp, time_field_offsets[i], timeout_sec, transforms[i])) {
+    // Already deskewed points are expressed in the sensor pose at header.stamp.
+    // Ignoring their time field applies only that pose; per-point time is still
+    // used for object motion and the output time field.
+    const bool deskewed = i < motion_compensation_deskewed_inputs_.size() && motion_compensation_deskewed_inputs_[i];
+    const int deskew_time_offset = deskewed ? -1 : time_field_offsets[i];
+    if (!prepareMotionTransform(*msgs[i], reference_stamp, deskew_time_offset, timeout_sec, transforms[i])) {
       motion_tf_available_.store(false, std::memory_order_relaxed);
       return false;
     }

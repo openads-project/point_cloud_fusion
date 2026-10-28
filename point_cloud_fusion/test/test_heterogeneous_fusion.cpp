@@ -288,6 +288,35 @@ class HeterogeneousFusion : public testing::TestWithParam<Configuration> {
     checkObjectPoint(21, 10.0F);
   }
 
+  void checkDeskewedInput(bool aeva_deskewed) {
+    // deskewed_inputs follows input_topics order, which depends on the fixture.
+    const std::vector<bool> deskewed =
+        GetParam().aeva_first ? std::vector<bool>{aeva_deskewed, false} : std::vector<bool>{false, aeva_deskewed};
+    start({rclcpp::Parameter("motion_compensation.enable", true), rclcpp::Parameter("motion_compensation.fixed_frame", "map"),
+           rclcpp::Parameter("motion_compensation.deskewed_inputs", deskewed),
+           rclcpp::Parameter("object_motion_compensation.enable", true)});
+    if (IsSkipped() || HasFatalFailure()) return;
+    tf2_ros::TransformBroadcaster broadcaster(driver_);
+    for (const int32_t seconds : {98, 107}) {
+      geometry_msgs::msg::TransformStamped transform;
+      transform.header.stamp.sec = seconds;
+      transform.header.frame_id = "map";
+      transform.child_frame_id = "base_link";
+      transform.transform.translation.x = 2.0 * seconds;
+      transform.transform.rotation.w = 1.0;
+      broadcaster.sendTransform(transform);
+    }
+    executor_->spin_all(100ms);
+    fuse(objectCloud());
+    // Same scene as ObjectMotionCombinesWithEgoTranslationWithoutDoubleCorrection:
+    // a deskewed input must not get the 0.2 m ego shift again, while object
+    // motion still uses the per-point acquisition time.
+    const float ego_shift = aeva_deskewed ? 0.0F : 0.2F;
+    checkObjectPoint(20, 9.5F + ego_shift);
+    checkObjectPoint(21, 10.0F + ego_shift);
+    checkObjectPoint(22, 10.5F + ego_shift);
+  }
+
   int32_t next_stamp_{100};
   std::string namespace_;
   std::unique_ptr<rclcpp::executors::SingleThreadedExecutor> executor_;
@@ -841,6 +870,14 @@ TEST_P(HeterogeneousFusion, ObjectMotionCombinesWithEgoTranslationWithoutDoubleC
   checkObjectPoint(20, 9.7F);
   checkObjectPoint(21, 10.2F);
   checkObjectPoint(22, 10.7F);
+}
+
+TEST_P(HeterogeneousFusion, DeskewedInputIsNotDeskewedTwice) { checkDeskewedInput(true); }
+
+TEST_P(HeterogeneousFusion, InputNotMarkedDeskewedIsDeskewed) { checkDeskewedInput(false); }
+
+TEST_P(HeterogeneousFusion, DeskewedInputsMustMatchInputTopics) {
+  EXPECT_THROW(start({rclcpp::Parameter("motion_compensation.deskewed_inputs", std::vector<bool>{true})}), std::invalid_argument);
 }
 
 TEST_P(HeterogeneousFusion, ObjectMotionIsDisabledDuringTfFallback) {

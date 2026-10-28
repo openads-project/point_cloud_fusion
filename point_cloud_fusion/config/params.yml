@@ -18,6 +18,17 @@
       fixed_frame: map # World-fixed TF frame connecting target_frame and every sensor frame
       time_field: t # UINT32 offset from header.stamp for each point
       # time_scale_sec: 1.0e-9 # default: nanoseconds; override only for a nonstandard time field
+      # ------------------------------------------------------------------------------
+      # IMPORTANT: deskewed_inputs MUST match what each sensor driver actually does!
+      # One entry per input_topics entry, in the same order:
+      #   true  = the driver already deskewed this cloud (motion-compensated to header.stamp)
+      #   false = raw scan; this node deskews it using the per-point time field
+      # The node cannot detect this from the data. A wrong entry silently corrupts geometry:
+      #   false for a deskewed input -> points are deskewed twice
+      #   true for a raw input       -> points are not deskewed at all
+      # Re-check this list whenever input_topics or a driver's motion compensation changes.
+      # ------------------------------------------------------------------------------
+      deskewed_inputs: [false, false]
       tf_timeout_sec: 0.1 # Per-lookup timeout; unavailable motion TF falls back to rigid fusion
     object_motion_compensation:
       enable: false # Requires motion_compensation.enable and acquisition XYZ in the sensor frame.
