@@ -155,8 +155,9 @@ inline void copyConvertedFields(const uint8_t* source,
                                         source_bigendian, value);
     // Integer fields cannot represent unknown floating measurements.
     if (!std::isfinite(value) && conversion.destination_datatype != sensor_msgs::msg::PointField::FLOAT32 &&
-        conversion.destination_datatype != sensor_msgs::msg::PointField::FLOAT64)
+        conversion.destination_datatype != sensor_msgs::msg::PointField::FLOAT64) {
       value = 0.0F;
+    }
     point_cloud_fusion::writeScalarField(byteOffset(destination, conversion.destination_offset), conversion.destination_datatype,
                                          destination_bigendian, value);
   }
@@ -1375,8 +1376,9 @@ std::optional<sensor_msgs::msg::PointField> PointCloudFusion::calibrationOutputF
     if (field != nullptr && field->count == 1 && detail::validField(*field, cloud.point_step) &&
         detail::validXyzField(detail::findField(cloud, "x"), cloud.point_step) &&
         detail::validXyzField(detail::findField(cloud, "y"), cloud.point_step) &&
-        detail::validXyzField(detail::findField(cloud, "z"), cloud.point_step))
+        detail::validXyzField(detail::findField(cloud, "z"), cloud.point_step)) {
       return *field;
+    }
   }
   return std::nullopt;
 }
