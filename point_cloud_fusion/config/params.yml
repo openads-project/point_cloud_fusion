@@ -18,7 +18,28 @@
       fixed_frame: map # World-fixed TF frame connecting target_frame and every sensor frame
       time_field: t # UINT32 offset from header.stamp for each point
       # time_scale_sec: 1.0e-9 # default: nanoseconds; override only for a nonstandard time field
+      # ------------------------------------------------------------------------------
+      # IMPORTANT: deskewed_inputs MUST match what each sensor driver actually does!
+      # One entry per input_topics entry, in the same order:
+      #   true  = the driver already deskewed this cloud (motion-compensated to header.stamp)
+      #   false = raw scan; this node deskews it using the per-point time field
+      # The node cannot detect this from the data. A wrong entry silently corrupts geometry:
+      #   false for a deskewed input -> points are deskewed twice
+      #   true for a raw input       -> points are not deskewed at all
+      # Re-check this list whenever input_topics or a driver's motion compensation changes.
+      # ------------------------------------------------------------------------------
+      deskewed_inputs: [false, false]
       tf_timeout_sec: 0.1 # Per-lookup timeout; unavailable motion TF falls back to rigid fusion
+    object_motion_compensation:
+      enable: false # Requires motion_compensation.enable and sensor-frame XYZ (raw or deskewed to header.stamp).
+      # Absolute radial velocity in m/s only; relative velocities are not supported. Tangential motion is unknown.
+      velocity_field: velocity # Missing/NaN velocities leave points unchanged; output fill values are never measurements.
+      # velocity_fields: ["velocity", ""] # Optional per-input override in input_topics order; empty entries disable correction.
+      doppler_sign: 1.0 # +1 for increasing-range-positive; -1 for approaching-positive.
+      max_time_offset_sec: 0.2 # Skip correction beyond this absolute acquisition-to-output interval.
+      max_speed_mps: 100.0 # Skip non-finite or larger absolute speeds.
+      # invalid_flags_field: point_flags_msb # Optional UINT32 measurement-validity field.
+      # invalid_flags_mask: 1 # Skip correction when any masked bit is set; zero disables flag checking.
     fixed_points_per_input_cloud: 0 # 0=disabled
     range_limits:
       enable: false # Enable XYZ range filtering in target_frame
@@ -34,7 +55,25 @@
     #   - "z"
     #   - "intensity"
     #   - ...
+
+    # Missing floating-point fields default to quiet NaN; integer fields default to zero.
+    # Integer fills must be integral; all fills must fit the datatype (nan is allowed for floats).
+    # Optional field=value exceptions (normally leave unset):
+    # missing_field_fill_values:
+    #   - "intensity=0"
+    #   - "ring=65535"
     output_stamp_mode: "earliest"
+    feature_calibration:
+      enable: false # Continuously map follower feature distributions to the pooled, unchanged leader distribution
+      mode: distribution # Continuous quantile-distribution mapping; currently the only supported mode
+      field: reflectivity # Scalar field to calibrate, typically reflectivity or intensity
+      # leading_inputs: ["~/input1"] # Empty by default; configure reference topics from input_topics when enabling calibration.
+      # follower_inputs: ["~/input2"] # Empty by default; configure follower topics from input_topics when enabling calibration.
+      samples_per_cloud: 2048 # Maximum rotating stratified samples collected from each selected cloud
+      window_samples: 100000 # Rolling sample capacity maintained separately for each selected sensor
+      minimum_samples: 20000 # Samples required before activating a follower mapping
+      quantiles: 64 # Number of tail-dense piecewise-linear quantile intervals; allowed: 2..64
+      update_interval_sec: 3.0 # Minimum interval between background mapping updates [s]
 
     # --- point_cloud_transport parameters -----
     # point_cloud_fusion.output.enable_pub_plugins:
