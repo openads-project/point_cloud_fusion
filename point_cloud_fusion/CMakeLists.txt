@@ -168,6 +168,16 @@ if(BUILD_TESTING)
   ament_add_gtest(test_motion_compensation test/test_motion_compensation.cpp)
   target_include_directories(test_motion_compensation PRIVATE include)
 
+  if(ENABLE_CUDA)
+    ament_add_gtest(test_voxel_downsampling_cuda test/test_voxel_downsampling_cuda.cpp TIMEOUT 180)
+    target_link_libraries(test_voxel_downsampling_cuda ${TARGET_NAME})
+    ament_target_dependencies(test_voxel_downsampling_cuda sensor_msgs)
+  endif()
+
+  ament_add_gtest(test_voxel_downsampling test/test_voxel_downsampling.cpp)
+  target_include_directories(test_voxel_downsampling PRIVATE include)
+  ament_target_dependencies(test_voxel_downsampling sensor_msgs)
+
   ament_add_gtest(test_point_cloud_layout test/test_point_cloud_layout.cpp)
   target_include_directories(test_point_cloud_layout PRIVATE include)
   ament_target_dependencies(test_point_cloud_layout sensor_msgs)

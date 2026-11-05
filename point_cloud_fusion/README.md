@@ -59,6 +59,8 @@ flowchart LR
 | `object_motion_compensation.max_speed_mps` | `float` | `100.0` | Maximum accepted absolute radial speed [m/s] |
 | `object_motion_compensation.invalid_flags_field` | `string` | - | Optional UINT32 field containing invalid-velocity flag bits |
 | `object_motion_compensation.invalid_flags_mask` | `int` | `0` | Skip object correction when any masked flag is set; zero disables the mask |
+| `downsampling.enable` | `bool` | `false` | Runtime-reconfigurable output voxel downsampling on the selected fusion backend |
+| `downsampling.voxel_size` | `float` | `0.1` | Runtime-reconfigurable cubic voxel edge length in metres; must be finite and positive |
 | `range_limits.enable` | `bool` | `false` | Enable XYZ range filtering after transformation into target_frame |
 | `range_limits.x_min` | `float` | `-1000.0` | Minimum x coordinate in target_frame to keep [m] |
 | `range_limits.x_max` | `float` | `1000.0` | Maximum x coordinate in target_frame to keep [m] |

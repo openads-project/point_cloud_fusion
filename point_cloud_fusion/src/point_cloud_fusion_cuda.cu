@@ -2,6 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cuda_runtime.h>
+#include <cub/device/device_select.cuh>
+#include <thrust/iterator/counting_iterator.h>
+#include <chrono>
+#include <limits>
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
@@ -298,15 +302,129 @@ __global__ void fusedTransformKernel(const uint8_t* input_points,
     }                                                                                              \
   } while (0)
 
+// keys and distances are computed once from the fully fused records.
+struct VoxelLocation {
+  int64_t cell[3];
+  double distance;
+};
+
+__device__ inline size_t voxelHash(const VoxelLocation& key, size_t mask) {
+  uint64_t hash = 0;
+  for (int axis = 0; axis < 3; ++axis) {
+    uint64_t value = static_cast<uint64_t>(key.cell[axis]);
+    value ^= value >> 30U;
+    value *= 0xbf58476d1ce4e5b9ULL;
+    value ^= value >> 27U;
+    value *= 0x94d049bb133111ebULL;
+    value ^= value >> 31U;
+    hash ^= value + 0x9e3779b97f4a7c15ULL + (hash << 6U) + (hash >> 2U);
+  }
+  return static_cast<size_t>(hash) & mask;
+}
+
+__device__ inline bool sameVoxel(const VoxelLocation& a, const VoxelLocation& b) {
+  return a.cell[0] == b.cell[0] && a.cell[1] == b.cell[1] && a.cell[2] == b.cell[2];
+}
+
+__global__ void locateVoxels(const uint8_t* points, unsigned int count, size_t step, int x_offset, int y_offset,
+                             int z_offset, double size, VoxelLocation* locations, int* error) {
+  const unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= count) return;
+  const int offsets[3] = {x_offset, y_offset, z_offset};
+  VoxelLocation key{};
+  for (int axis = 0; axis < 3; ++axis) {
+    const double xyz = loadUnaligned<float>(points + static_cast<size_t>(index) * step + offsets[axis]);
+    const double scaled = __ddiv_rn(xyz, size);
+    const double cell = floor(scaled);
+    if (!isfinite(cell) || cell < -0x1p63 || cell >= 0x1p63) {
+      atomicExch(error, 1);
+      locations[index] = VoxelLocation{};
+      return;
+    }
+    key.cell[axis] = static_cast<int64_t>(cell);
+    // explicit rounding matches the CPU distance and avoids fused multiply-add tie changes.
+    const double delta = __dsub_rn(__dsub_rn(scaled, cell), 0.5);
+    key.distance = __dadd_rn(key.distance, __dmul_rn(delta, delta));
+  }
+  locations[index] = key;
+}
+
+__device__ inline bool betterVoxelPoint(unsigned int candidate, unsigned int best, const VoxelLocation* locations,
+                                        const uint8_t* points, size_t step, int x_offset, int y_offset, int z_offset) {
+  if (locations[candidate].distance != locations[best].distance) {
+    return locations[candidate].distance < locations[best].distance;
+  }
+  const auto* a = points + static_cast<size_t>(candidate) * step;
+  const auto* b = points + static_cast<size_t>(best) * step;
+  const int offsets[3] = {x_offset, y_offset, z_offset};
+  for (int axis = 0; axis < 3; ++axis) {
+    const float av = loadUnaligned<float>(a + offsets[axis]);
+    const float bv = loadUnaligned<float>(b + offsets[axis]);
+    if (av != bv) return av < bv;
+  }
+  for (size_t byte = 0; byte < step; ++byte) {
+    if (a[byte] != b[byte]) return a[byte] < b[byte];
+  }
+  return candidate < best;
+}
+
+__global__ void selectVoxelPoints(const uint8_t* points, unsigned int count, size_t step, int x_offset, int y_offset,
+                                  int z_offset, const VoxelLocation* locations, unsigned int* slots, size_t mask) {
+  const unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= count) return;
+  const auto& key = locations[index];
+  size_t slot = voxelHash(key, mask);
+  while (true) {
+    unsigned int best = atomicCAS(slots + slot, 0xFFFFFFFFU, index);
+    if (best == 0xFFFFFFFFU) return;
+    if (sameVoxel(key, locations[best])) {
+      while (betterVoxelPoint(index, best, locations, points, step, x_offset, y_offset, z_offset)) {
+        const unsigned int previous = atomicCAS(slots + slot, best, index);
+        if (previous == best) return;
+        best = previous;
+      }
+      return;
+    }
+    slot = (slot + 1) & mask;
+  }
+}
+
+struct IsVoxelRepresentative {
+  const VoxelLocation* locations;
+  const unsigned int* slots;
+  size_t mask;
+
+  __device__ bool operator()(unsigned int index) const {
+    const auto& key = locations[index];
+    size_t slot = voxelHash(key, mask);
+    while (true) {
+      const unsigned int best = slots[slot];
+      if (best == 0xFFFFFFFFU) return false;
+      if (sameVoxel(key, locations[best])) return index == best;
+      slot = (slot + 1) & mask;
+    }
+  }
+};
+
+__global__ void gatherVoxelPoints(const uint8_t* points, uint8_t* output, size_t step, const unsigned int* indices,
+                                  const unsigned int* selected_count, unsigned int fused_count) {
+  const unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= fused_count || index >= *selected_count) return;
+  const auto* source = points + static_cast<size_t>(indices[index]) * step;
+  auto* destination = output + static_cast<size_t>(index) * step;
+  for (size_t byte = 0; byte < step; ++byte) destination[byte] = source[byte];
+}
+
 // Helper macro for CUDA errors in constructors (throws exception)
-#define CUDA_CHECK_THROW(call)                                                                                          \
-  do {                                                                                                                  \
-    cudaError_t error = call;                                                                                           \
-    if (error != cudaSuccess) {                                                                                         \
-      char error_msg[256];                                                                                              \
-      snprintf(error_msg, sizeof(error_msg), "CUDA error at %s:%d: %s", __FILE__, __LINE__, cudaGetErrorString(error)); \
-      throw std::runtime_error(error_msg);                                                                              \
-    }                                                                                                                   \
+#define CUDA_CHECK_THROW(call)                                                              \
+  do {                                                                                      \
+    cudaError_t error = call;                                                               \
+    if (error != cudaSuccess) {                                                             \
+      char error_msg[256];                                                                  \
+      snprintf(error_msg, sizeof(error_msg), "CUDA error at %s:%d: %s", __FILE__, __LINE__, \
+               cudaGetErrorString(error));                                                  \
+      throw std::runtime_error(error_msg);                                                  \
+    }                                                                                       \
   } while (0)
 
 CudaTransformContext::CudaTransformContext()
@@ -371,6 +489,22 @@ void CudaTransformContext::cleanup() {
     cudaFree(d_copy_plan_);
     d_copy_plan_ = nullptr;
   }
+  cudaFree(d_voxel_keys_);
+  cudaFree(d_voxel_slots_);
+  cudaFree(d_voxel_indices_);
+  cudaFree(d_voxel_output_);
+  cudaFree(d_voxel_error_);
+  cudaFree(d_voxel_scratch_);
+  d_voxel_keys_ = nullptr;
+  d_voxel_slots_ = nullptr;
+  d_voxel_indices_ = nullptr;
+  d_voxel_output_ = nullptr;
+  d_voxel_error_ = nullptr;
+  d_voxel_scratch_ = nullptr;
+  voxel_point_capacity_ = 0;
+  voxel_slot_capacity_ = 0;
+  voxel_output_capacity_ = 0;
+  voxel_scratch_capacity_ = 0;
   input_capacity_ = 0;
   output_capacity_ = 0;
   metadata_capacity_ = 0;
@@ -602,7 +736,93 @@ bool CudaTransformContext::addCloud(const uint8_t* input_data,
   return true;
 }
 
-bool CudaTransformContext::getBatchOutput(std::vector<uint8_t>& output_data, size_t& valid_count) {
+bool CudaTransformContext::downsampleBatch(unsigned int count, double voxel_size, double& duration_ms) {
+  const auto start = std::chrono::steady_clock::now();
+  if (!std::isfinite(voxel_size) || voxel_size <= 0.0 ||
+      count > static_cast<unsigned int>(std::numeric_limits<int>::max())) {
+    fprintf(stderr, "ERROR: invalid GPU voxel size or point count\n");
+    return false;
+  }
+  const auto stream = static_cast<cudaStream_t>(stream_);
+  if (count > voxel_point_capacity_) {
+    cudaFree(d_voxel_keys_);
+    cudaFree(d_voxel_indices_);
+    d_voxel_keys_ = nullptr;
+    d_voxel_indices_ = nullptr;
+    voxel_point_capacity_ = 0;
+    const size_t capacity = count + static_cast<size_t>(count) / 2;
+    CUDA_CHECK(cudaMalloc(&d_voxel_keys_, capacity * sizeof(VoxelLocation)));
+    CUDA_CHECK(cudaMalloc(&d_voxel_indices_, capacity * sizeof(unsigned int)));
+    voxel_point_capacity_ = capacity;
+  }
+  size_t slots = 1;
+  while (slots < 2 * static_cast<size_t>(count)) slots <<= 1U;
+  if (slots > voxel_slot_capacity_) {
+    cudaFree(d_voxel_slots_);
+    d_voxel_slots_ = nullptr;
+    voxel_slot_capacity_ = 0;
+    CUDA_CHECK(cudaMalloc(&d_voxel_slots_, slots * sizeof(unsigned int)));
+    voxel_slot_capacity_ = slots;
+  }
+  const size_t bytes = static_cast<size_t>(count) * current_output_point_step_;
+  if (bytes > voxel_output_capacity_) {
+    cudaFree(d_voxel_output_);
+    d_voxel_output_ = nullptr;
+    voxel_output_capacity_ = 0;
+    CUDA_CHECK(cudaMalloc(&d_voxel_output_, bytes + bytes / 2));
+    voxel_output_capacity_ = bytes + bytes / 2;
+  }
+  if (!d_voxel_error_) CUDA_CHECK(cudaMalloc(&d_voxel_error_, sizeof(int)));
+  CUDA_CHECK(cudaMemsetAsync(d_voxel_error_, 0, sizeof(int), stream));
+  CUDA_CHECK(cudaMemsetAsync(d_voxel_slots_, 0xFF, slots * sizeof(unsigned int), stream));
+  const int blocks = static_cast<int>((static_cast<size_t>(count) + 255) / 256);
+  auto* keys = static_cast<VoxelLocation*>(d_voxel_keys_);
+  locateVoxels<<<blocks, 256, 0, stream>>>(d_accumulated_buffer_, count, current_output_point_step_,
+                                           current_dst_x_offset_, current_dst_y_offset_, current_dst_z_offset_,
+                                           voxel_size, keys, d_voxel_error_);
+  CUDA_CHECK(cudaGetLastError());
+  selectVoxelPoints<<<blocks, 256, 0, stream>>>(d_accumulated_buffer_, count, current_output_point_step_,
+                                                current_dst_x_offset_, current_dst_y_offset_, current_dst_z_offset_,
+                                                keys, d_voxel_slots_, slots - 1);
+  CUDA_CHECK(cudaGetLastError());
+  // stable selection keeps representatives in the fused buffer's existing order.
+  const auto begin = thrust::make_counting_iterator<unsigned int>(0);
+  const IsVoxelRepresentative selected{keys, d_voxel_slots_, slots - 1};
+  size_t scratch_bytes = 0;
+  CUDA_CHECK(cub::DeviceSelect::If(nullptr, scratch_bytes, begin, d_voxel_indices_, d_global_count_,
+                                   static_cast<int>(count), selected, stream));
+  if (scratch_bytes > voxel_scratch_capacity_) {
+    cudaFree(d_voxel_scratch_);
+    d_voxel_scratch_ = nullptr;
+    voxel_scratch_capacity_ = 0;
+    CUDA_CHECK(cudaMalloc(&d_voxel_scratch_, scratch_bytes));
+    voxel_scratch_capacity_ = scratch_bytes;
+  }
+  CUDA_CHECK(cub::DeviceSelect::If(d_voxel_scratch_, scratch_bytes, begin, d_voxel_indices_, d_global_count_,
+                                   static_cast<int>(count), selected, stream));
+  gatherVoxelPoints<<<blocks, 256, 0, stream>>>(d_accumulated_buffer_, d_voxel_output_, current_output_point_step_,
+                                                d_voxel_indices_, d_global_count_, count);
+  CUDA_CHECK(cudaGetLastError());
+  int voxel_error = 0;
+  CUDA_CHECK(cudaMemcpyAsync(&voxel_error, d_voxel_error_, sizeof(int), cudaMemcpyDeviceToHost, stream));
+  CUDA_CHECK(
+      cudaMemcpyAsync(h_global_count_pinned_, d_global_count_, sizeof(unsigned int), cudaMemcpyDeviceToHost, stream));
+  CUDA_CHECK(cudaStreamSynchronize(stream));
+  duration_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+  if (voxel_error) {
+    fprintf(stderr, "ERROR: rejecting fused batch: voxel cell index is non-finite or outside int64 range\n");
+    return false;
+  }
+  return true;
+}
+
+bool CudaTransformContext::getBatchOutput(std::vector<uint8_t>& output_data, size_t& valid_count,
+                                          bool downsampling, double voxel_size, size_t& fused_count,
+                                          double& downsampling_ms) {
+  output_data.clear();
+  valid_count = 0;
+  fused_count = 0;
+  downsampling_ms = 0.0;
   if (host_metadata_.empty()) {
     valid_count = 0;
     return true;
@@ -646,19 +866,26 @@ bool CudaTransformContext::getBatchOutput(std::vector<uint8_t>& output_data, siz
   CUDA_CHECK(cudaStreamSynchronize(stream));
 
   unsigned int total_valid = *h_global_count_pinned_;
-  valid_count = static_cast<size_t>(total_valid);
+  fused_count = static_cast<size_t>(total_valid);
+  valid_count = fused_count;
 
   if (valid_count == 0) {
     output_data.clear();
     return true;
   }
 
-  // 6. Resize output vector and read back data
+  if (downsampling) {
+    if (!downsampleBatch(total_valid, voxel_size, downsampling_ms)) return false;
+    valid_count = static_cast<size_t>(*h_global_count_pinned_);
+  }
+
+  // 6. Resize output vector and read back only the retained records
   output_data.resize(valid_count * current_output_point_step_);
 
   // Direct copy to std::vector (driver will handle staging)
   CUDA_CHECK(
-      cudaMemcpy(output_data.data(), d_accumulated_buffer_, valid_count * current_output_point_step_, cudaMemcpyDeviceToHost));
+      cudaMemcpy(output_data.data(), downsampling ? d_voxel_output_ : d_accumulated_buffer_,
+                 valid_count * current_output_point_step_, cudaMemcpyDeviceToHost));
 
   return true;
 }

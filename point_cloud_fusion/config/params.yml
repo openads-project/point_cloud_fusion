@@ -49,6 +49,9 @@
       # y_max: 1000.0 # Maximum y coordinate to keep [m] (in target_frame)
       # z_min: -20.0 # Minimum z coordinate to keep [m] (in target_frame)
       # z_max: 20.0 # Maximum z coordinate to keep [m] (in target_frame)
+    downsampling:
+      enable: false # enable output voxel downsampling
+      voxel_size: 0.1 # cubic voxel edge length [m]
     # output_fields: # Determine which fields to include in the output point cloud (all if not set)
     #   - "x"
     #   - "y"

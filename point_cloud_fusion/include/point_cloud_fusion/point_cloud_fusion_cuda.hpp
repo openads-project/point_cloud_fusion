@@ -141,15 +141,37 @@ class CudaTransformContext {
    * @brief Get the accumulated results from the batch
    *
    * @param output_data Output point cloud data (full points with all fields)
-   * @param valid_count Number of valid (finite) points output
+   * @param valid_count number of output points after optional GPU downsampling
+   * @param downsampling enable GPU voxel selection before host readback
+   * @param voxel_size cubic voxel edge length in metres
+   * @param fused_count number of fused points before downsampling
+   * @param downsampling_ms wall time spent in GPU downsampling, including synchronization
    * @return true on success, false on error
    */
-  bool getBatchOutput(std::vector<uint8_t>& output_data, size_t& valid_count);
+  bool getBatchOutput(std::vector<uint8_t>& output_data,
+                      size_t& valid_count,
+                      bool downsampling,
+                      double voxel_size,
+                      size_t& fused_count,
+                      double& downsampling_ms);
 
  private:
   bool ensureInputCapacity(size_t num_points);
   bool ensureOutputCapacity(size_t total_max_points, size_t point_step);
   void cleanup();
+  bool downsampleBatch(unsigned int count, double voxel_size, double& duration_ms);
+
+  // lazily allocated voxel workspace, reused across batches.
+  void* d_voxel_keys_ = nullptr;
+  unsigned int* d_voxel_slots_ = nullptr;
+  unsigned int* d_voxel_indices_ = nullptr;
+  uint8_t* d_voxel_output_ = nullptr;
+  int* d_voxel_error_ = nullptr;
+  void* d_voxel_scratch_ = nullptr;
+  size_t voxel_point_capacity_ = 0;
+  size_t voxel_slot_capacity_ = 0;
+  size_t voxel_output_capacity_ = 0;
+  size_t voxel_scratch_capacity_ = 0;
 
   // Device memory
   uint8_t* d_input_points_;

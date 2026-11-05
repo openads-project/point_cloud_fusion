@@ -19,6 +19,7 @@
 
 #include <point_cloud_fusion/point_cloud_fusion.hpp>
 #include <point_cloud_fusion/point_cloud_layout.hpp>
+#include <point_cloud_fusion/voxel_downsampling.hpp>
 
 #include <tf2/LinearMath/Transform.h>
 #include <tf2/time.h>
@@ -355,6 +356,9 @@ PointCloudFusion::PointCloudFusion(const rclcpp::NodeOptions& options) : Node("p
                                 4294967295.0,                                    // to_value
                                 1);                                              // step_value
   validateObjectMotionParameters();
+  declareAndLoadParameter("downsampling.enable", downsampling_enable_, "Enable output voxel downsampling");
+  declareAndLoadParameter("downsampling.voxel_size", downsampling_voxel_size_, "Cubic voxel edge length [m]");
+  detail::validateVoxelSize(downsampling_voxel_size_);
   this->declareAndLoadParameter("range_limits.enable", range_limits_enable_,     // name
                                 "Enable XYZ range filtering after transformation into target_frame",
                                 true,                                            // add_to_auto_reconfigurable_params
@@ -657,7 +661,16 @@ rcl_interfaces::msg::SetParametersResult PointCloudFusion::parametersCallback(co
 
   for (const auto& param : parameters) {
     const auto& name = param.get_name();
-    if (name == "missing_field_fill_values") {
+    if (name == "downsampling.voxel_size") {
+      try {
+        detail::validateVoxelSize(param.as_double());
+      } catch (const std::exception& error) {
+        rcl_interfaces::msg::SetParametersResult result;
+        result.successful = false;
+        result.reason = error.what();
+        return result;
+      }
+    } else if (name == "missing_field_fill_values") {
       try {
         prospective_fills = detail::parseMissingFieldFillValues(param.as_string_array());
       } catch (const std::exception& error) {
@@ -1077,6 +1090,7 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
 
 #ifdef ENABLE_CUDA
   std::size_t cuda_valid_count = 0;
+  double cuda_downsampling_ms = 0.0;
   auto processing_start = std::chrono::steady_clock::time_point{};
   auto processing_end = std::chrono::steady_clock::time_point{};
   PointCloudMsg::UniquePtr cuda_result;
@@ -1089,7 +1103,7 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
     if (cuda_context_ && use_cuda_) {
       used_cuda = true;
       processing_start = std::chrono::steady_clock::now();
-      cuda_result = fusePointCloudBatchCUDA(msgs, timing, cuda_valid_count);
+      cuda_result = fusePointCloudBatchCUDA(msgs, timing, cuda_valid_count, cuda_downsampling_ms);
       processing_end = std::chrono::steady_clock::now();
     }
   }
@@ -1097,7 +1111,7 @@ void PointCloudFusion::handleSynchronizedPointClouds(const std::vector<sensor_ms
   if (used_cuda) {
     if (cuda_result) {
       publishFusedCloud(std::move(cuda_result), timing, msgs.size(), cuda_valid_count, callback_start, processing_start,
-                        processing_end, "cuda_fusion_complete");
+                        processing_end, "cuda_fusion_complete", true, cuda_downsampling_ms);
     } else {
       RCLCPP_WARN(this->get_logger(), "CUDA processing failed");
     }
@@ -1613,9 +1627,28 @@ void PointCloudFusion::publishFusedCloud(PointCloudMsg::UniquePtr cloud,
                                          std::chrono::steady_clock::time_point callback_start,
                                          std::chrono::steady_clock::time_point processing_start,
                                          std::chrono::steady_clock::time_point processing_end,
-                                         const char* event_name) {
-  // Publish the fused cloud and emit a compact timing summary for
-  // observability.
+                                         const char* event_name,
+                                         bool cuda_output,
+                                         double gpu_downsampling_ms) {
+  const auto downsampling_start = std::chrono::steady_clock::now();
+  if (downsampling_enable_ && !cuda_output) {
+    try {
+      detail::downsampleVoxels(*cloud, downsampling_voxel_size_);
+    } catch (const std::exception& error) {
+      RCLCPP_ERROR(get_logger(), "Rejecting fused batch during downsampling: %s", error.what());
+      return;
+    }
+  }
+  const auto downsampling_end = std::chrono::steady_clock::now();
+  const std::size_t output_points = cloud->width;
+  const auto stamp_ns = rclcpp::Time(cloud->header.stamp).nanoseconds();
+  const double fusion_duration_ms =
+      std::chrono::duration<double, std::milli>(processing_end - processing_start).count() - gpu_downsampling_ms;
+  const double downsampling_ms = cuda_output
+                                     ? gpu_downsampling_ms
+                                     : std::chrono::duration<double, std::milli>(downsampling_end - downsampling_start).count();
+  processing_end = downsampling_end;
+  // publish after output filtering so all transport plugins see the same cloud.
   cloud_publisher_->publish(std::move(cloud));
   const auto publish_end = std::chrono::steady_clock::now();
 
@@ -1628,9 +1661,10 @@ void PointCloudFusion::publishFusedCloud(PointCloudMsg::UniquePtr cloud,
   RCLCPP_DEBUG(this->get_logger(),
                "%s inputs=%zu points=%zu e2e_ms=%.3f prep_ms=%.3f "
                "process_ms=%.3f publish_ms=%.3f batch_dt_ms=%.3f "
-               "max_dt_ms=%.3f",
+               "max_dt_ms=%.3f output_points=%zu fusion_ms=%.3f downsampling_ms=%.3f stamp_ns=%lld",
                event_name, input_count, total_points, e2e_duration_ms, prep_duration_ms, processing_duration_ms,
-               publish_duration_ms, batch_dt_ms, timing.max_dt_from_input0_sec * 1000.0);
+               publish_duration_ms, batch_dt_ms, timing.max_dt_from_input0_sec * 1000.0, output_points, fusion_duration_ms,
+               downsampling_ms, static_cast<long long>(stamp_ns));
 }
 
 void PointCloudFusion::configureOutputStampMode(const std::string& mode) {
@@ -1750,8 +1784,12 @@ void PointCloudFusion::validateRangeLimits() {
 #ifdef ENABLE_CUDA
 
 PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatchCUDA(
-    const std::vector<PointCloudMsg::ConstSharedPtr>& msgs, const FusionTiming& timing, std::size_t& valid_point_count) const {
+    const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
+    const FusionTiming& timing,
+    std::size_t& valid_point_count,
+    double& downsampling_ms) const {
   valid_point_count = 0;
+  downsampling_ms = 0.0;
   if (msgs.empty() || !cuda_context_) return nullptr;
 
   const rclcpp::Time chosen_stamp = outputStamp(timing);
@@ -2032,8 +2070,12 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   output->point_step = output_layout.point_step;
   output->fields = output_layout.fields;
   output->is_dense = output_layout.is_dense;
-  if (!cuda_context_->getBatchOutput(output->data, valid_point_count) || valid_point_count == 0) return nullptr;
-  output->width = valid_point_count;
+  std::size_t output_count = 0;
+  if (!cuda_context_->getBatchOutput(output->data, output_count, downsampling_enable_, downsampling_voxel_size_,
+                                     valid_point_count, downsampling_ms) ||
+      output_count == 0)
+    return nullptr;
+  output->width = output_count;
   output->row_step = output->point_step * output->width;
   return output;
 }

@@ -1166,4 +1166,54 @@ INSTANTIATE_TEST_SUITE_P(BackendsAndInputOrders,
                                   (info.param.aeva_first ? "AevaFirst" : "OusterFirst");
                          });
 
+TEST_P(HeterogeneousFusion, OutputVoxelsMergeSensorsAfterTransformAndSupportRuntimeChanges) {
+  start({rclcpp::Parameter("downsampling.enable", true), rclcpp::Parameter("downsampling.voxel_size", 1.0),
+         rclcpp::Parameter("output_fields", std::vector<std::string>{"x", "y", "z", "intensity"})});
+  if (IsSkipped() || HasFatalFailure()) return;
+  tf2_ros::StaticTransformBroadcaster broadcaster(driver_);
+  geometry_msgs::msg::TransformStamped transform;
+  transform.header.frame_id = "base_link";
+  transform.child_frame_id = "aeva";
+  transform.transform.translation.x = 10.0;
+  transform.transform.rotation.w = 1.0;
+  broadcaster.sendTransform(transform);
+  executor_->spin_all(100ms);
+  auto aeva = syntheticCloud(true);
+  aeva.header.frame_id = "aeva";
+  fuse(aeva);
+  checkOutput({11, 12, 13, 14}, false);
+  for (double size : {0.0, -1.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
+    auto result = fusion_->set_parameters_atomically(
+        {rclcpp::Parameter("downsampling.enable", false), rclcpp::Parameter("downsampling.voxel_size", size)});
+    EXPECT_FALSE(result.successful);
+    EXPECT_TRUE(fusion_->get_parameter("downsampling.enable").as_bool());
+    EXPECT_DOUBLE_EQ(fusion_->get_parameter("downsampling.voxel_size").as_double(), 1.0);
+  }
+  ASSERT_TRUE(fusion_->set_parameters_atomically({rclcpp::Parameter("downsampling.enable", false)}).successful);
+  fuse(aeva);
+  checkOutput({11, 12, 13, 14, 11, 12, 13}, false);
+  const auto disabled = output_->data;
+  ASSERT_TRUE(fusion_->set_parameters_atomically({rclcpp::Parameter("downsampling.voxel_size", .01)}).successful);
+  fuse(aeva);
+  if (!GetParam().cuda) {
+    EXPECT_EQ(output_->data, disabled);
+  }
+  ASSERT_TRUE(fusion_
+                  ->set_parameters_atomically(
+                      {rclcpp::Parameter("downsampling.enable", true), rclcpp::Parameter("downsampling.voxel_size", 100.0)})
+                  .successful);
+  fuse(aeva);
+  EXPECT_EQ(output_->width, 1U);
+}
+
+TEST_P(HeterogeneousFusion, InvalidVoxelSizeFailsAtStartupEvenWhenDisabled) {
+  for (double size : {0.0, -1.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
+    rclcpp::NodeOptions options;
+    options.parameter_overrides({rclcpp::Parameter("target_frame", "base_link"),
+                                 rclcpp::Parameter("input_topics", std::vector<std::string>{"/a", "/b"}),
+                                 rclcpp::Parameter("use_cuda", false), rclcpp::Parameter("downsampling.voxel_size", size)});
+    EXPECT_THROW(std::make_shared<point_cloud_fusion::PointCloudFusion>(options), std::invalid_argument);
+  }
+}
+
 }  // namespace

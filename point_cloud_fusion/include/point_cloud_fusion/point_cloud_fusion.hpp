@@ -214,7 +214,8 @@ class PointCloudFusion : public rclcpp::Node {
 #ifdef ENABLE_CUDA
   PointCloudMsg::UniquePtr fusePointCloudBatchCUDA(const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
                                                    const FusionTiming& timing,
-                                                   std::size_t& valid_point_count) const;
+                                                   std::size_t& valid_point_count,
+                                                   double& downsampling_ms) const;
 #endif
 
   /**
@@ -223,11 +224,13 @@ class PointCloudFusion : public rclcpp::Node {
    * @param cloud Fused point cloud to publish.
    * @param timing Timing metadata for the synchronized input batch.
    * @param input_count Number of input clouds in the batch.
-   * @param total_points Number of points before filtering.
+   * @param total_points fused point count before output downsampling.
    * @param callback_start Time when the synchronized callback started.
    * @param processing_start Time when fusion processing started.
    * @param processing_end Time when fusion processing ended.
    * @param event_name Trace event name for the selected backend.
+   * @param cuda_output whether output filtering already ran on the GPU
+   * @param gpu_downsampling_ms GPU downsampling wall time, excluded from fusion time
    */
   void publishFusedCloud(PointCloudMsg::UniquePtr cloud,
                          const FusionTiming& timing,
@@ -236,7 +239,9 @@ class PointCloudFusion : public rclcpp::Node {
                          std::chrono::steady_clock::time_point callback_start,
                          std::chrono::steady_clock::time_point processing_start,
                          std::chrono::steady_clock::time_point processing_end,
-                         const char* event_name);
+                         const char* event_name,
+                         bool cuda_output = false,
+                         double gpu_downsampling_ms = 0.0);
 
   enum class OutputStampMode { Latest, Earliest, Mean, Input0 };
 
@@ -287,6 +292,8 @@ class PointCloudFusion : public rclcpp::Node {
   // Optional: limit each input cloud to this many points before processing.
   // 0 = disabled (use actual point count per cloud)
   int64_t fixed_points_per_input_cloud_ = 0;
+  bool downsampling_enable_ = false;
+  double downsampling_voxel_size_ = 0.1;
   bool range_limits_enable_ = false;
   double range_limits_x_min_ = -1000.0;
   double range_limits_x_max_ = 1000.0;
