@@ -1183,8 +1183,8 @@ TEST_P(HeterogeneousFusion, OutputVoxelsMergeSensorsAfterTransformAndSupportRunt
   fuse(aeva);
   checkOutput({11, 12, 13, 14}, false);
   for (double size : {0.0, -1.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
-    auto result = fusion_->set_parameters_atomically({rclcpp::Parameter("downsampling.enable", false),
-                                                     rclcpp::Parameter("downsampling.voxel_size", size)});
+    auto result = fusion_->set_parameters_atomically(
+        {rclcpp::Parameter("downsampling.enable", false), rclcpp::Parameter("downsampling.voxel_size", size)});
     EXPECT_FALSE(result.successful);
     EXPECT_TRUE(fusion_->get_parameter("downsampling.enable").as_bool());
     EXPECT_DOUBLE_EQ(fusion_->get_parameter("downsampling.voxel_size").as_double(), 1.0);
@@ -1198,8 +1198,10 @@ TEST_P(HeterogeneousFusion, OutputVoxelsMergeSensorsAfterTransformAndSupportRunt
   if (!GetParam().cuda) {
     EXPECT_EQ(output_->data, disabled);
   }
-  ASSERT_TRUE(fusion_->set_parameters_atomically({rclcpp::Parameter("downsampling.enable", true),
-                                                rclcpp::Parameter("downsampling.voxel_size", 100.0)}).successful);
+  ASSERT_TRUE(fusion_
+                  ->set_parameters_atomically(
+                      {rclcpp::Parameter("downsampling.enable", true), rclcpp::Parameter("downsampling.voxel_size", 100.0)})
+                  .successful);
   fuse(aeva);
   EXPECT_EQ(output_->width, 1U);
 }

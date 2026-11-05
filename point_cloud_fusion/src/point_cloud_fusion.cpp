@@ -1644,9 +1644,9 @@ void PointCloudFusion::publishFusedCloud(PointCloudMsg::UniquePtr cloud,
   const auto stamp_ns = rclcpp::Time(cloud->header.stamp).nanoseconds();
   const double fusion_duration_ms =
       std::chrono::duration<double, std::milli>(processing_end - processing_start).count() - gpu_downsampling_ms;
-  const double downsampling_ms =
-      cuda_output ? gpu_downsampling_ms
-                  : std::chrono::duration<double, std::milli>(downsampling_end - downsampling_start).count();
+  const double downsampling_ms = cuda_output
+                                     ? gpu_downsampling_ms
+                                     : std::chrono::duration<double, std::milli>(downsampling_end - downsampling_start).count();
   processing_end = downsampling_end;
   // publish after output filtering so all transport plugins see the same cloud.
   cloud_publisher_->publish(std::move(cloud));
@@ -1784,7 +1784,9 @@ void PointCloudFusion::validateRangeLimits() {
 #ifdef ENABLE_CUDA
 
 PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatchCUDA(
-    const std::vector<PointCloudMsg::ConstSharedPtr>& msgs, const FusionTiming& timing, std::size_t& valid_point_count,
+    const std::vector<PointCloudMsg::ConstSharedPtr>& msgs,
+    const FusionTiming& timing,
+    std::size_t& valid_point_count,
     double& downsampling_ms) const {
   valid_point_count = 0;
   downsampling_ms = 0.0;
@@ -2070,7 +2072,9 @@ PointCloudFusion::PointCloudMsg::UniquePtr PointCloudFusion::fusePointCloudBatch
   output->is_dense = output_layout.is_dense;
   std::size_t output_count = 0;
   if (!cuda_context_->getBatchOutput(output->data, output_count, downsampling_enable_, downsampling_voxel_size_,
-                                    valid_point_count, downsampling_ms) || output_count == 0) return nullptr;
+                                     valid_point_count, downsampling_ms) ||
+      output_count == 0)
+    return nullptr;
   output->width = output_count;
   output->row_step = output->point_step * output->width;
   return output;

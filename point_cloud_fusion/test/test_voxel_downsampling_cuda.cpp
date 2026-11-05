@@ -61,13 +61,12 @@ class CudaVoxelDownsampling : public testing::Test {
   bool process(const Cloud& input, bool enabled, double size, Cloud& output, std::size_t& fused, double& duration) {
     const float inf = std::numeric_limits<float>::infinity();
     const std::vector<point_cloud_fusion::cuda::CudaFieldCopy> copies{{0, 0, static_cast<int>(input.point_step)}};
-    if (!context_->resetBatch(input.width, input.width, input.point_step, input.point_step, 4, 12, 20, 4, 12, 20, -1,
-                              copies, -inf, inf, -inf, inf, -inf, inf, false))
+    if (!context_->resetBatch(input.width, input.width, input.point_step, input.point_step, 4, 12, 20, 4, 12, 20, -1, copies,
+                              -inf, inf, -inf, inf, -inf, inf, false))
       return false;
     const float rotation[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
     const float translation[3] = {0, 0, 0};
-    if (input.width && !context_->addCloud(input.data.data(), input.width, rotation, translation, false, 0))
-      return false;
+    if (input.width && !context_->addCloud(input.data.data(), input.width, rotation, translation, false, 0)) return false;
     output = input;
     std::size_t count = 0;
     if (!context_->getBatchOutput(output.data, count, enabled, size, fused, duration)) return false;
@@ -119,8 +118,7 @@ TEST_F(CudaVoxelDownsampling, MatchesCpuAcrossDenseSparseAndRepeatedBatches) {
   larger.row_step = larger.width * larger.point_step;
   larger.data.assign(larger.row_step, 0);
   for (std::size_t i = 0; i < xyz.size(); ++i) {
-    for (std::size_t a = 0; a < 3; ++a)
-      std::memcpy(larger.data.data() + i * larger.point_step + 4 + a * 8, &xyz[i][a], 4);
+    for (std::size_t a = 0; a < 3; ++a) std::memcpy(larger.data.data() + i * larger.point_step + 4 + a * 8, &xyz[i][a], 4);
   }
   compare(larger, 1.0);
   compare(cloud(xyz), .1);
