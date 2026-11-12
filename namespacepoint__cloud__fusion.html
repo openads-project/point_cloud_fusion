@@ -28,7 +28,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">point_cloud_fusion<span id="projectnumber">&#160;v1.5.1</span>
+   <div id="projectname">point_cloud_fusion<span id="projectnumber">&#160;v1.6.0</span>
    </div>
   </td>
  </tr>
@@ -113,6 +113,10 @@ Namespaces</h2></td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="nested-classes" name="nested-classes"></a>
 Classes</h2></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classpoint__cloud__fusion_1_1DistributionFeatureCalibrator.html">DistributionFeatureCalibrator</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structpoint__cloud__fusion_1_1FeatureMapping.html">FeatureMapping</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structpoint__cloud__fusion_1_1is__vector.html">is_vector</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structpoint__cloud__fusion_1_1is__vector_3_01std_1_1vector_3_01T_00_01A_01_4_01_4.html">is_vector&lt; std::vector&lt; T, A &gt; &gt;</a></td></tr>
@@ -120,12 +124,20 @@ Classes</h2></td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structpoint__cloud__fusion_1_1MotionTransform.html">MotionTransform</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Endpoint transforms for fast scan motion interpolation.  <a href="structpoint__cloud__fusion_1_1MotionTransform.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structpoint__cloud__fusion_1_1ObjectMotion.html">ObjectMotion</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classpoint__cloud__fusion_1_1PointCloudFusion.html">PointCloudFusion</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classpoint__cloud__fusion_1_1PointCloudFusion.html" title="PointCloudFusion class.">PointCloudFusion</a> class.  <a href="classpoint__cloud__fusion_1_1PointCloudFusion.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="func-members" name="func-members"></a>
 Functions</h2></td></tr>
+<tr class="memitem:abe84a02400731d4e50bb85d274e07f5b" id="r_abe84a02400731d4e50bb85d274e07f5b"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#abe84a02400731d4e50bb85d274e07f5b">readScalarField</a> (const uint8_t *data, uint8_t datatype, bool bigendian, float &amp;value)</td></tr>
+<tr class="memdesc:abe84a02400731d4e50bb85d274e07f5b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read a PointField scalar and convert it to floating point.  <br /></td></tr>
+<tr class="separator:abe84a02400731d4e50bb85d274e07f5b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8e896f32e864c7096b53e09d3cbd3a89" id="r_a8e896f32e864c7096b53e09d3cbd3a89"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a8e896f32e864c7096b53e09d3cbd3a89">writeScalarField</a> (uint8_t *data, uint8_t datatype, bool bigendian, float value)</td></tr>
+<tr class="memdesc:a8e896f32e864c7096b53e09d3cbd3a89"><td class="mdescLeft">&#160;</td><td class="mdescRight">Convert and write a floating-point value to a PointField scalar.  <br /></td></tr>
+<tr class="separator:a8e896f32e864c7096b53e09d3cbd3a89"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a68d769c8ce8a72e528d1ac3945a091f0" id="r_a68d769c8ce8a72e528d1ac3945a091f0"><td class="memTemplParams" colspan="2">template&lt;typename PointCloudPtr , typename Fields &gt; </td></tr>
 <tr class="memitem:a68d769c8ce8a72e528d1ac3945a091f0"><td class="memTemplItemLeft" align="right" valign="top">std::vector&lt; PointCloudPtr &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="#a68d769c8ce8a72e528d1ac3945a091f0">selectMotionCompatibleClouds</a> (const std::vector&lt; PointCloudPtr &gt; &amp;msgs, std::size_t <a class="el" href="test__motion__compensation_8cpp.html#af49223dcd0550f657fa7e649ec1028bd">point_step</a>, const Fields &amp;<a class="el" href="test__motion__compensation_8cpp.html#aef54c91611086ab48d7a51a37d6fa8df">fields</a>)</td></tr>
 <tr class="memdesc:a68d769c8ce8a72e528d1ac3945a091f0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Keep batch indices while excluding clouds with incompatible layouts.  <br /></td></tr>
@@ -133,6 +145,11 @@ Functions</h2></td></tr>
 <tr class="memitem:ab863e63fb4949bef72f15ff23bd59b81" id="r_ab863e63fb4949bef72f15ff23bd59b81"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ab863e63fb4949bef72f15ff23bd59b81">transformPointInterpolated</a> (const <a class="el" href="structpoint__cloud__fusion_1_1MotionTransform.html">MotionTransform</a> &amp;transform, uint32_t time_offset, float x, float y, float z, float &amp;transformed_x, float &amp;transformed_y, float &amp;transformed_z)</td></tr>
 <tr class="memdesc:ab863e63fb4949bef72f15ff23bd59b81"><td class="mdescLeft">&#160;</td><td class="mdescRight">Transform a point using normalized quaternion interpolation.  <br /></td></tr>
 <tr class="separator:ab863e63fb4949bef72f15ff23bd59b81"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:af0d78027947d380922e771653f613fb9" id="r_af0d78027947d380922e771653f613fb9"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#af0d78027947d380922e771653f613fb9">retainDeskewedPose</a> (<a class="el" href="structpoint__cloud__fusion_1_1MotionTransform.html">MotionTransform</a> &amp;transform)</td></tr>
+<tr class="separator:af0d78027947d380922e771653f613fb9"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a55f04c01d73146d297892351ddc70fde" id="r_a55f04c01d73146d297892351ddc70fde"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a55f04c01d73146d297892351ddc70fde">compensateObjectMotion</a> (const <a class="el" href="structpoint__cloud__fusion_1_1ObjectMotion.html">ObjectMotion</a> &amp;motion, float velocity, uint32_t point_time, float &amp;x, float &amp;y, float &amp;z)</td></tr>
+<tr class="memdesc:a55f04c01d73146d297892351ddc70fde"><td class="mdescLeft">&#160;</td><td class="mdescRight">Advance a measured acquisition ray using absolute radial velocity.  <br /></td></tr>
+<tr class="separator:a55f04c01d73146d297892351ddc70fde"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="var-members" name="var-members"></a>
 Variables</h2></td></tr>
@@ -141,6 +158,223 @@ Variables</h2></td></tr>
 <tr class="separator:a358b566c0327fab9f92f072b3a10e865"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Function Documentation</h2>
+<a id="a55f04c01d73146d297892351ddc70fde" name="a55f04c01d73146d297892351ddc70fde"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a55f04c01d73146d297892351ddc70fde">&#9670;&#160;</a></span>compensateObjectMotion()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool point_cloud_fusion::compensateObjectMotion </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="structpoint__cloud__fusion_1_1ObjectMotion.html">ObjectMotion</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>motion</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float</td>          <td class="paramname"><span class="paramname"><em>velocity</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint32_t</td>          <td class="paramname"><span class="paramname"><em>point_time</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float &amp;</td>          <td class="paramname"><span class="paramname"><em>x</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float &amp;</td>          <td class="paramname"><span class="paramname"><em>y</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float &amp;</td>          <td class="paramname"><span class="paramname"><em>z</em></span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Advance a measured acquisition ray using absolute radial velocity. </p>
+<p>Add displacement along the acquisition ray before the rigid/deskew transform. Deskewed inputs subtract the acquisition origin in the header frame before computing the ray. Unknown, implausible, and zero measurements leave XYZ unchanged. </p>
+
+<p class="definition">Definition at line <a class="el" href="object__motion__compensation_8hpp_source.html#l00038">38</a> of file <a class="el" href="object__motion__compensation_8hpp_source.html">object_motion_compensation.hpp</a>.</p>
+<div class="fragment"><div class="line"><span class="lineno">   39</span>                                                                  {</div>
+<div class="line"><span class="lineno">   40</span>  <span class="comment">// clang-format on</span></div>
+<div class="line"><span class="lineno">   41</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> dt = motion.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1ObjectMotion.html#ab611c9431c837c87bf825a25cd18072c">reference_offset_sec</a> - <span class="keyword">static_cast&lt;</span><span class="keywordtype">float</span><span class="keyword">&gt;</span>(point_time) * motion.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1ObjectMotion.html#ae6da277f2540784409f94800d4fb080c">time_scale_sec</a>;</div>
+<div class="line"><span class="lineno">   42</span>  <span class="keywordflow">if</span> (!std::isfinite(velocity) || std::abs(velocity) &gt; motion.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1ObjectMotion.html#aa750629915606605c14432853c671401">max_speed_mps</a> || !std::isfinite(dt) ||</div>
+<div class="line"><span class="lineno">   43</span>      std::abs(dt) &gt; motion.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1ObjectMotion.html#abe61bd3c4b0c6c87169ad3d0a5cc20ba">max_time_offset_sec</a> || velocity == 0.0F || dt == 0.0F) {</div>
+<div class="line"><span class="lineno">   44</span>    <span class="keywordflow">return</span> <span class="keyword">false</span>;</div>
+<div class="line"><span class="lineno">   45</span>  }</div>
+<div class="line"><span class="lineno">   46</span>  <span class="keywordtype">float</span> origin_alpha = 0.0F;</div>
+<div class="line"><span class="lineno">   47</span>  <span class="keywordflow">if</span> (motion.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1ObjectMotion.html#a5618634fab017b37f366970442cf89e2">ray_origin_max_time_offset</a> &gt; 0) {</div>
+<div class="line"><span class="lineno">   48</span>    origin_alpha = point_time &gt;= motion.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1ObjectMotion.html#a5618634fab017b37f366970442cf89e2">ray_origin_max_time_offset</a></div>
+<div class="line"><span class="lineno">   49</span>                       ? 1.0F</div>
+<div class="line"><span class="lineno">   50</span>                       : <span class="keyword">static_cast&lt;</span><span class="keywordtype">float</span><span class="keyword">&gt;</span>(point_time) / <span class="keyword">static_cast&lt;</span><span class="keywordtype">float</span><span class="keyword">&gt;</span>(motion.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1ObjectMotion.html#a5618634fab017b37f366970442cf89e2">ray_origin_max_time_offset</a>);</div>
+<div class="line"><span class="lineno">   51</span>  }</div>
+<div class="line"><span class="lineno">   52</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> ray_x = x - origin_alpha * motion.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1ObjectMotion.html#aa596f24192d4a3a103e18ec2566cc7b5">end_ray_origin</a>[0];</div>
+<div class="line"><span class="lineno">   53</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> ray_y = y - origin_alpha * motion.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1ObjectMotion.html#aa596f24192d4a3a103e18ec2566cc7b5">end_ray_origin</a>[1];</div>
+<div class="line"><span class="lineno">   54</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> ray_z = z - origin_alpha * motion.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1ObjectMotion.html#aa596f24192d4a3a103e18ec2566cc7b5">end_ray_origin</a>[2];</div>
+<div class="line"><span class="lineno">   55</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> range_squared = ray_x * ray_x + ray_y * ray_y + ray_z * ray_z;</div>
+<div class="line"><span class="lineno">   56</span>  <span class="keywordflow">if</span> (!std::isfinite(range_squared) || range_squared &lt;= 0.0F) <span class="keywordflow">return</span> <span class="keyword">false</span>;</div>
+<div class="line"><span class="lineno">   57</span><span class="preprocessor">#ifdef __CUDA_ARCH__</span></div>
+<div class="line"><span class="lineno">   58</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> inverse_range = rsqrtf(range_squared);</div>
+<div class="line"><span class="lineno">   59</span><span class="preprocessor">#else</span></div>
+<div class="line"><span class="lineno">   60</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> inverse_range = 1.0F / std::sqrt(range_squared);</div>
+<div class="line"><span class="lineno">   61</span><span class="preprocessor">#endif</span></div>
+<div class="line"><span class="lineno">   62</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> displacement_scale = motion.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1ObjectMotion.html#a79a36fecc9221cac43cccea3ae7ada98">doppler_sign</a> * velocity * dt * inverse_range;</div>
+<div class="line"><span class="lineno">   63</span>  <span class="keywordflow">if</span> (!std::isfinite(displacement_scale)) <span class="keywordflow">return</span> <span class="keyword">false</span>;</div>
+<div class="line"><span class="lineno">   64</span>  x += ray_x * displacement_scale;</div>
+<div class="line"><span class="lineno">   65</span>  y += ray_y * displacement_scale;</div>
+<div class="line"><span class="lineno">   66</span>  z += ray_z * displacement_scale;</div>
+<div class="line"><span class="lineno">   67</span>  <span class="keywordflow">return</span> <span class="keyword">true</span>;</div>
+<div class="line"><span class="lineno">   68</span>}</div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1ObjectMotion_html_a5618634fab017b37f366970442cf89e2"><div class="ttname"><a href="structpoint__cloud__fusion_1_1ObjectMotion.html#a5618634fab017b37f366970442cf89e2">point_cloud_fusion::ObjectMotion::ray_origin_max_time_offset</a></div><div class="ttdeci">uint32_t ray_origin_max_time_offset</div><div class="ttdef"><b>Definition</b> <a href="object__motion__compensation_8hpp_source.html#l00024">object_motion_compensation.hpp:24</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1ObjectMotion_html_a79a36fecc9221cac43cccea3ae7ada98"><div class="ttname"><a href="structpoint__cloud__fusion_1_1ObjectMotion.html#a79a36fecc9221cac43cccea3ae7ada98">point_cloud_fusion::ObjectMotion::doppler_sign</a></div><div class="ttdeci">float doppler_sign</div><div class="ttdef"><b>Definition</b> <a href="object__motion__compensation_8hpp_source.html#l00020">object_motion_compensation.hpp:20</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1ObjectMotion_html_aa596f24192d4a3a103e18ec2566cc7b5"><div class="ttname"><a href="structpoint__cloud__fusion_1_1ObjectMotion.html#aa596f24192d4a3a103e18ec2566cc7b5">point_cloud_fusion::ObjectMotion::end_ray_origin</a></div><div class="ttdeci">std::array&lt; float, 3 &gt; end_ray_origin</div><div class="ttdef"><b>Definition</b> <a href="object__motion__compensation_8hpp_source.html#l00023">object_motion_compensation.hpp:23</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1ObjectMotion_html_aa750629915606605c14432853c671401"><div class="ttname"><a href="structpoint__cloud__fusion_1_1ObjectMotion.html#aa750629915606605c14432853c671401">point_cloud_fusion::ObjectMotion::max_speed_mps</a></div><div class="ttdeci">float max_speed_mps</div><div class="ttdef"><b>Definition</b> <a href="object__motion__compensation_8hpp_source.html#l00022">object_motion_compensation.hpp:22</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1ObjectMotion_html_ab611c9431c837c87bf825a25cd18072c"><div class="ttname"><a href="structpoint__cloud__fusion_1_1ObjectMotion.html#ab611c9431c837c87bf825a25cd18072c">point_cloud_fusion::ObjectMotion::reference_offset_sec</a></div><div class="ttdeci">float reference_offset_sec</div><div class="ttdef"><b>Definition</b> <a href="object__motion__compensation_8hpp_source.html#l00018">object_motion_compensation.hpp:18</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1ObjectMotion_html_abe61bd3c4b0c6c87169ad3d0a5cc20ba"><div class="ttname"><a href="structpoint__cloud__fusion_1_1ObjectMotion.html#abe61bd3c4b0c6c87169ad3d0a5cc20ba">point_cloud_fusion::ObjectMotion::max_time_offset_sec</a></div><div class="ttdeci">float max_time_offset_sec</div><div class="ttdef"><b>Definition</b> <a href="object__motion__compensation_8hpp_source.html#l00021">object_motion_compensation.hpp:21</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1ObjectMotion_html_ae6da277f2540784409f94800d4fb080c"><div class="ttname"><a href="structpoint__cloud__fusion_1_1ObjectMotion.html#ae6da277f2540784409f94800d4fb080c">point_cloud_fusion::ObjectMotion::time_scale_sec</a></div><div class="ttdeci">float time_scale_sec</div><div class="ttdef"><b>Definition</b> <a href="object__motion__compensation_8hpp_source.html#l00019">object_motion_compensation.hpp:19</a></div></div>
+</div><!-- fragment -->
+</div>
+</div>
+<a id="abe84a02400731d4e50bb85d274e07f5b" name="abe84a02400731d4e50bb85d274e07f5b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#abe84a02400731d4e50bb85d274e07f5b">&#9670;&#160;</a></span>readScalarField()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool point_cloud_fusion::readScalarField </td>
+          <td>(</td>
+          <td class="paramtype">const uint8_t *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint8_t</td>          <td class="paramname"><span class="paramname"><em>datatype</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">bool</td>          <td class="paramname"><span class="paramname"><em>bigendian</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float &amp;</td>          <td class="paramname"><span class="paramname"><em>value</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Read a PointField scalar and convert it to floating point. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">data</td><td>Address of the scalar value. </td></tr>
+    <tr><td class="paramname">datatype</td><td>sensor_msgs::msg::PointField datatype identifier. </td></tr>
+    <tr><td class="paramname">bigendian</td><td>Whether the source cloud uses big-endian byte order. </td></tr>
+    <tr><td class="paramname">value</td><td>Destination for the converted value. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>True when the datatype is supported. </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="feature__calibration_8cpp_source.html#l00082">82</a> of file <a class="el" href="feature__calibration_8cpp_source.html">feature_calibration.cpp</a>.</p>
+<div class="fragment"><div class="line"><span class="lineno">   82</span>                                                                                          {</div>
+<div class="line"><span class="lineno">   83</span>  <span class="keyword">using </span>Field = sensor_msgs::msg::PointField;</div>
+<div class="line"><span class="lineno">   84</span>  <span class="keywordflow">switch</span> (datatype) {</div>
+<div class="line"><span class="lineno">   85</span>    <span class="keywordflow">case</span> Field::INT8:</div>
+<div class="line"><span class="lineno">   86</span>      value = loadScalar&lt;int8_t&gt;(data, bigendian);</div>
+<div class="line"><span class="lineno">   87</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">   88</span>    <span class="keywordflow">case</span> Field::UINT8:</div>
+<div class="line"><span class="lineno">   89</span>      value = loadScalar&lt;uint8_t&gt;(data, bigendian);</div>
+<div class="line"><span class="lineno">   90</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">   91</span>    <span class="keywordflow">case</span> Field::INT16:</div>
+<div class="line"><span class="lineno">   92</span>      value = loadScalar&lt;int16_t&gt;(data, bigendian);</div>
+<div class="line"><span class="lineno">   93</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">   94</span>    <span class="keywordflow">case</span> Field::UINT16:</div>
+<div class="line"><span class="lineno">   95</span>      value = loadScalar&lt;uint16_t&gt;(data, bigendian);</div>
+<div class="line"><span class="lineno">   96</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">   97</span>    <span class="keywordflow">case</span> Field::INT32:</div>
+<div class="line"><span class="lineno">   98</span>      value = <span class="keyword">static_cast&lt;</span><span class="keywordtype">float</span><span class="keyword">&gt;</span>(loadScalar&lt;int32_t&gt;(data, bigendian));</div>
+<div class="line"><span class="lineno">   99</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">  100</span>    <span class="keywordflow">case</span> Field::UINT32:</div>
+<div class="line"><span class="lineno">  101</span>      value = <span class="keyword">static_cast&lt;</span><span class="keywordtype">float</span><span class="keyword">&gt;</span>(loadScalar&lt;uint32_t&gt;(data, bigendian));</div>
+<div class="line"><span class="lineno">  102</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">  103</span>    <span class="keywordflow">case</span> Field::FLOAT32:</div>
+<div class="line"><span class="lineno">  104</span>      value = loadScalar&lt;float&gt;(data, bigendian);</div>
+<div class="line"><span class="lineno">  105</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">  106</span>    <span class="keywordflow">case</span> Field::FLOAT64:</div>
+<div class="line"><span class="lineno">  107</span>      value = <span class="keyword">static_cast&lt;</span><span class="keywordtype">float</span><span class="keyword">&gt;</span>(loadScalar&lt;double&gt;(data, bigendian));</div>
+<div class="line"><span class="lineno">  108</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">  109</span>    <span class="keywordflow">default</span>:</div>
+<div class="line"><span class="lineno">  110</span>      <span class="keywordflow">return</span> <span class="keyword">false</span>;</div>
+<div class="line"><span class="lineno">  111</span>  }</div>
+<div class="line"><span class="lineno">  112</span>  <span class="keywordflow">return</span> std::isfinite(value);</div>
+<div class="line"><span class="lineno">  113</span>}</div>
+</div><!-- fragment -->
+</div>
+</div>
+<a id="af0d78027947d380922e771653f613fb9" name="af0d78027947d380922e771653f613fb9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af0d78027947d380922e771653f613fb9">&#9670;&#160;</a></span>retainDeskewedPose()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void point_cloud_fusion::retainDeskewedPose </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structpoint__cloud__fusion_1_1MotionTransform.html">MotionTransform</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>transform</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+<p>Retain the header pose while preserving the acquisition origin trajectory. </p>
+
+<p class="definition">Definition at line <a class="el" href="motion__compensation_8hpp_source.html#l00086">86</a> of file <a class="el" href="motion__compensation_8hpp_source.html">motion_compensation.hpp</a>.</p>
+<div class="fragment"><div class="line"><span class="lineno">   86</span>                                                           {</div>
+<div class="line"><span class="lineno">   87</span>  <a class="code hl_struct" href="structpoint__cloud__fusion_1_1MotionTransform.html">MotionTransform</a> inverse_rotation;</div>
+<div class="line"><span class="lineno">   88</span>  inverse_rotation.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a> = {-transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[0], -transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[1],</div>
+<div class="line"><span class="lineno">   89</span>                                       -transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[2], transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[3]};</div>
+<div class="line"><span class="lineno">   90</span>  transformPointInterpolated(inverse_rotation, 0, transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">end_translation</a>[0] - transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">start_translation</a>[0],</div>
+<div class="line"><span class="lineno">   91</span>                             transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">end_translation</a>[1] - transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">start_translation</a>[1],</div>
+<div class="line"><span class="lineno">   92</span>                             transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">end_translation</a>[2] - transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">start_translation</a>[2], transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4a8c5886f9c3f0a2d08fed7ec34e5b23">end_ray_origin</a>[0],</div>
+<div class="line"><span class="lineno">   93</span>                             transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4a8c5886f9c3f0a2d08fed7ec34e5b23">end_ray_origin</a>[1], transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4a8c5886f9c3f0a2d08fed7ec34e5b23">end_ray_origin</a>[2]);</div>
+<div class="line"><span class="lineno">   94</span>  transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a8fa6712dcc830020253fdf02d828d9ce">ray_origin_max_time_offset</a> = transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a130fdb0134186c90ccb8823817124463">max_time_offset</a>;</div>
+<div class="line"><span class="lineno">   95</span>  transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a130fdb0134186c90ccb8823817124463">max_time_offset</a> = 0;</div>
+<div class="line"><span class="lineno">   96</span>  transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">end_translation</a> = transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">start_translation</a>;</div>
+<div class="line"><span class="lineno">   97</span>  transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">end_quaternion</a> = transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>;</div>
+<div class="line"><span class="lineno">   98</span>}</div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html">point_cloud_fusion::MotionTransform</a></div><div class="ttdoc">Endpoint transforms for fast scan motion interpolation.</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00020">motion_compensation.hpp:20</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a130fdb0134186c90ccb8823817124463"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a130fdb0134186c90ccb8823817124463">point_cloud_fusion::MotionTransform::max_time_offset</a></div><div class="ttdeci">uint32_t max_time_offset</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00025">motion_compensation.hpp:25</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a1cbee2dbcc3b587625b2734b242ba76f"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">point_cloud_fusion::MotionTransform::start_quaternion</a></div><div class="ttdeci">std::array&lt; float, 4 &gt; start_quaternion</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00023">motion_compensation.hpp:23</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a40418be8c90426aae1d81e956f33b2af"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">point_cloud_fusion::MotionTransform::end_quaternion</a></div><div class="ttdeci">std::array&lt; float, 4 &gt; end_quaternion</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00024">motion_compensation.hpp:24</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a4a8c5886f9c3f0a2d08fed7ec34e5b23"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a4a8c5886f9c3f0a2d08fed7ec34e5b23">point_cloud_fusion::MotionTransform::end_ray_origin</a></div><div class="ttdeci">std::array&lt; float, 3 &gt; end_ray_origin</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00027">motion_compensation.hpp:27</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a4beba3c92c63c9905e2f16449286c8a9"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">point_cloud_fusion::MotionTransform::end_translation</a></div><div class="ttdeci">std::array&lt; float, 3 &gt; end_translation</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00022">motion_compensation.hpp:22</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a782ca63f8ac71d6f78005ea9bfc36712"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">point_cloud_fusion::MotionTransform::start_translation</a></div><div class="ttdeci">std::array&lt; float, 3 &gt; start_translation</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00021">motion_compensation.hpp:21</a></div></div>
+<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a8fa6712dcc830020253fdf02d828d9ce"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a8fa6712dcc830020253fdf02d828d9ce">point_cloud_fusion::MotionTransform::ray_origin_max_time_offset</a></div><div class="ttdeci">uint32_t ray_origin_max_time_offset</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00028">motion_compensation.hpp:28</a></div></div>
+</div><!-- fragment -->
+</div>
+</div>
 <a id="a68d769c8ce8a72e528d1ac3945a091f0" name="a68d769c8ce8a72e528d1ac3945a091f0"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a68d769c8ce8a72e528d1ac3945a091f0">&#9670;&#160;</a></span>selectMotionCompatibleClouds()</h2>
 
@@ -169,18 +403,18 @@ template&lt;typename PointCloudPtr , typename Fields &gt; </div>
 
 <p>Keep batch indices while excluding clouds with incompatible layouts. </p>
 
-<p class="definition">Definition at line <a class="el" href="motion__compensation_8hpp_source.html#l00032">32</a> of file <a class="el" href="motion__compensation_8hpp_source.html">motion_compensation.hpp</a>.</p>
-<div class="fragment"><div class="line"><span class="lineno">   34</span>                                                                              {</div>
-<div class="line"><span class="lineno">   35</span>  std::vector&lt;PointCloudPtr&gt; motion_msgs = msgs;</div>
-<div class="line"><span class="lineno">   36</span>  <span class="keywordflow">for</span> (<span class="keyword">auto</span>&amp; motion_msg : motion_msgs) {</div>
-<div class="line"><span class="lineno">   37</span>    <span class="keywordflow">if</span> (motion_msg &amp;&amp; (motion_msg-&gt;point_step != <a class="code hl_variable" href="test__motion__compensation_8cpp.html#af49223dcd0550f657fa7e649ec1028bd">point_step</a> || motion_msg-&gt;fields != <a class="code hl_variable" href="test__motion__compensation_8cpp.html#aef54c91611086ab48d7a51a37d6fa8df">fields</a>)) {</div>
-<div class="line"><span class="lineno">   38</span>      motion_msg.reset();</div>
-<div class="line"><span class="lineno">   39</span>    }</div>
-<div class="line"><span class="lineno">   40</span>  }</div>
-<div class="line"><span class="lineno">   41</span>  <span class="keywordflow">return</span> motion_msgs;</div>
-<div class="line"><span class="lineno">   42</span>}</div>
-<div class="ttc" id="atest__motion__compensation_8cpp_html_aef54c91611086ab48d7a51a37d6fa8df"><div class="ttname"><a href="test__motion__compensation_8cpp.html#aef54c91611086ab48d7a51a37d6fa8df">fields</a></div><div class="ttdeci">std::vector&lt; int &gt; fields</div><div class="ttdef"><b>Definition</b> <a href="test__motion__compensation_8cpp_source.html#l00017">test_motion_compensation.cpp:17</a></div></div>
-<div class="ttc" id="atest__motion__compensation_8cpp_html_af49223dcd0550f657fa7e649ec1028bd"><div class="ttname"><a href="test__motion__compensation_8cpp.html#af49223dcd0550f657fa7e649ec1028bd">point_step</a></div><div class="ttdeci">std::size_t point_step</div><div class="ttdef"><b>Definition</b> <a href="test__motion__compensation_8cpp_source.html#l00016">test_motion_compensation.cpp:16</a></div></div>
+<p class="definition">Definition at line <a class="el" href="motion__compensation_8hpp_source.html#l00035">35</a> of file <a class="el" href="motion__compensation_8hpp_source.html">motion_compensation.hpp</a>.</p>
+<div class="fragment"><div class="line"><span class="lineno">   37</span>                                                                              {</div>
+<div class="line"><span class="lineno">   38</span>  std::vector&lt;PointCloudPtr&gt; motion_msgs = msgs;</div>
+<div class="line"><span class="lineno">   39</span>  <span class="keywordflow">for</span> (<span class="keyword">auto</span>&amp; motion_msg : motion_msgs) {</div>
+<div class="line"><span class="lineno">   40</span>    <span class="keywordflow">if</span> (motion_msg &amp;&amp; (motion_msg-&gt;point_step != <a class="code hl_variable" href="test__motion__compensation_8cpp.html#af49223dcd0550f657fa7e649ec1028bd">point_step</a> || motion_msg-&gt;fields != <a class="code hl_variable" href="test__motion__compensation_8cpp.html#aef54c91611086ab48d7a51a37d6fa8df">fields</a>)) {</div>
+<div class="line"><span class="lineno">   41</span>      motion_msg.reset();</div>
+<div class="line"><span class="lineno">   42</span>    }</div>
+<div class="line"><span class="lineno">   43</span>  }</div>
+<div class="line"><span class="lineno">   44</span>  <span class="keywordflow">return</span> motion_msgs;</div>
+<div class="line"><span class="lineno">   45</span>}</div>
+<div class="ttc" id="atest__motion__compensation_8cpp_html_aef54c91611086ab48d7a51a37d6fa8df"><div class="ttname"><a href="test__motion__compensation_8cpp.html#aef54c91611086ab48d7a51a37d6fa8df">fields</a></div><div class="ttdeci">std::vector&lt; int &gt; fields</div><div class="ttdef"><b>Definition</b> <a href="test__motion__compensation_8cpp_source.html#l00021">test_motion_compensation.cpp:21</a></div></div>
+<div class="ttc" id="atest__motion__compensation_8cpp_html_af49223dcd0550f657fa7e649ec1028bd"><div class="ttname"><a href="test__motion__compensation_8cpp.html#af49223dcd0550f657fa7e649ec1028bd">point_step</a></div><div class="ttdeci">std::size_t point_step</div><div class="ttdef"><b>Definition</b> <a href="test__motion__compensation_8cpp_source.html#l00020">test_motion_compensation.cpp:20</a></div></div>
 </div><!-- fragment -->
 </div>
 </div>
@@ -243,39 +477,111 @@ template&lt;typename PointCloudPtr , typename Fields &gt; </div>
 
 <p>Transform a point using normalized quaternion interpolation. </p>
 
-<p class="definition">Definition at line <a class="el" href="motion__compensation_8hpp_source.html#l00047">47</a> of file <a class="el" href="motion__compensation_8hpp_source.html">motion_compensation.hpp</a>.</p>
-<div class="fragment"><div class="line"><span class="lineno">   54</span>                                                             {</div>
-<div class="line"><span class="lineno">   55</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> alpha = transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a130fdb0134186c90ccb8823817124463">max_time_offset</a> &gt; 0</div>
-<div class="line"><span class="lineno">   56</span>                          ? std::min(1.0F, <span class="keyword">static_cast&lt;</span><span class="keywordtype">float</span><span class="keyword">&gt;</span>(time_offset) / <span class="keyword">static_cast&lt;</span><span class="keywordtype">float</span><span class="keyword">&gt;</span>(transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a130fdb0134186c90ccb8823817124463">max_time_offset</a>))</div>
-<div class="line"><span class="lineno">   57</span>                          : 0.0F;</div>
-<div class="line"><span class="lineno">   58</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> inverse_alpha = 1.0F - alpha;</div>
-<div class="line"><span class="lineno">   59</span> </div>
-<div class="line"><span class="lineno">   60</span>  <span class="keywordtype">float</span> qx = inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[0] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">end_quaternion</a>[0];</div>
-<div class="line"><span class="lineno">   61</span>  <span class="keywordtype">float</span> qy = inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[1] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">end_quaternion</a>[1];</div>
-<div class="line"><span class="lineno">   62</span>  <span class="keywordtype">float</span> qz = inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[2] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">end_quaternion</a>[2];</div>
-<div class="line"><span class="lineno">   63</span>  <span class="keywordtype">float</span> qw = inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[3] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">end_quaternion</a>[3];</div>
-<div class="line"><span class="lineno">   64</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> inverse_norm = 1.0F / std::sqrt(qx * qx + qy * qy + qz * qz + qw * qw);</div>
-<div class="line"><span class="lineno">   65</span>  qx *= inverse_norm;</div>
-<div class="line"><span class="lineno">   66</span>  qy *= inverse_norm;</div>
-<div class="line"><span class="lineno">   67</span>  qz *= inverse_norm;</div>
-<div class="line"><span class="lineno">   68</span>  qw *= inverse_norm;</div>
-<div class="line"><span class="lineno">   69</span> </div>
-<div class="line"><span class="lineno">   70</span>  <span class="comment">// Rotate with q * p * conjugate(q), avoiding temporary tf2 objects.</span></div>
-<div class="line"><span class="lineno">   71</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> tx = 2.0F * (qy * z - qz * y);</div>
-<div class="line"><span class="lineno">   72</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> ty = 2.0F * (qz * x - qx * z);</div>
-<div class="line"><span class="lineno">   73</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> tz = 2.0F * (qx * y - qy * x);</div>
-<div class="line"><span class="lineno">   74</span>  transformed_x =</div>
-<div class="line"><span class="lineno">   75</span>      x + qw * tx + (qy * tz - qz * ty) + inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">start_translation</a>[0] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">end_translation</a>[0];</div>
-<div class="line"><span class="lineno">   76</span>  transformed_y =</div>
-<div class="line"><span class="lineno">   77</span>      y + qw * ty + (qz * tx - qx * tz) + inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">start_translation</a>[1] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">end_translation</a>[1];</div>
-<div class="line"><span class="lineno">   78</span>  transformed_z =</div>
-<div class="line"><span class="lineno">   79</span>      z + qw * tz + (qx * ty - qy * tx) + inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">start_translation</a>[2] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">end_translation</a>[2];</div>
-<div class="line"><span class="lineno">   80</span>}</div>
-<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a130fdb0134186c90ccb8823817124463"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a130fdb0134186c90ccb8823817124463">point_cloud_fusion::MotionTransform::max_time_offset</a></div><div class="ttdeci">uint32_t max_time_offset</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00025">motion_compensation.hpp:25</a></div></div>
-<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a1cbee2dbcc3b587625b2734b242ba76f"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">point_cloud_fusion::MotionTransform::start_quaternion</a></div><div class="ttdeci">std::array&lt; float, 4 &gt; start_quaternion</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00023">motion_compensation.hpp:23</a></div></div>
-<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a40418be8c90426aae1d81e956f33b2af"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">point_cloud_fusion::MotionTransform::end_quaternion</a></div><div class="ttdeci">std::array&lt; float, 4 &gt; end_quaternion</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00024">motion_compensation.hpp:24</a></div></div>
-<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a4beba3c92c63c9905e2f16449286c8a9"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">point_cloud_fusion::MotionTransform::end_translation</a></div><div class="ttdeci">std::array&lt; float, 3 &gt; end_translation</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00022">motion_compensation.hpp:22</a></div></div>
-<div class="ttc" id="astructpoint__cloud__fusion_1_1MotionTransform_html_a782ca63f8ac71d6f78005ea9bfc36712"><div class="ttname"><a href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">point_cloud_fusion::MotionTransform::start_translation</a></div><div class="ttdeci">std::array&lt; float, 3 &gt; start_translation</div><div class="ttdef"><b>Definition</b> <a href="motion__compensation_8hpp_source.html#l00021">motion_compensation.hpp:21</a></div></div>
+<p class="definition">Definition at line <a class="el" href="motion__compensation_8hpp_source.html#l00050">50</a> of file <a class="el" href="motion__compensation_8hpp_source.html">motion_compensation.hpp</a>.</p>
+<div class="fragment"><div class="line"><span class="lineno">   57</span>                                                             {</div>
+<div class="line"><span class="lineno">   58</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> alpha = transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a130fdb0134186c90ccb8823817124463">max_time_offset</a> &gt; 0</div>
+<div class="line"><span class="lineno">   59</span>                          ? std::min(1.0F, <span class="keyword">static_cast&lt;</span><span class="keywordtype">float</span><span class="keyword">&gt;</span>(time_offset) / <span class="keyword">static_cast&lt;</span><span class="keywordtype">float</span><span class="keyword">&gt;</span>(transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a130fdb0134186c90ccb8823817124463">max_time_offset</a>))</div>
+<div class="line"><span class="lineno">   60</span>                          : 0.0F;</div>
+<div class="line"><span class="lineno">   61</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> inverse_alpha = 1.0F - alpha;</div>
+<div class="line"><span class="lineno">   62</span> </div>
+<div class="line"><span class="lineno">   63</span>  <span class="keywordtype">float</span> qx = inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[0] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">end_quaternion</a>[0];</div>
+<div class="line"><span class="lineno">   64</span>  <span class="keywordtype">float</span> qy = inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[1] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">end_quaternion</a>[1];</div>
+<div class="line"><span class="lineno">   65</span>  <span class="keywordtype">float</span> qz = inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[2] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">end_quaternion</a>[2];</div>
+<div class="line"><span class="lineno">   66</span>  <span class="keywordtype">float</span> qw = inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a1cbee2dbcc3b587625b2734b242ba76f">start_quaternion</a>[3] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a40418be8c90426aae1d81e956f33b2af">end_quaternion</a>[3];</div>
+<div class="line"><span class="lineno">   67</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> inverse_norm = 1.0F / std::sqrt(qx * qx + qy * qy + qz * qz + qw * qw);</div>
+<div class="line"><span class="lineno">   68</span>  qx *= inverse_norm;</div>
+<div class="line"><span class="lineno">   69</span>  qy *= inverse_norm;</div>
+<div class="line"><span class="lineno">   70</span>  qz *= inverse_norm;</div>
+<div class="line"><span class="lineno">   71</span>  qw *= inverse_norm;</div>
+<div class="line"><span class="lineno">   72</span> </div>
+<div class="line"><span class="lineno">   73</span>  <span class="comment">// Rotate with q * p * conjugate(q), avoiding temporary tf2 objects.</span></div>
+<div class="line"><span class="lineno">   74</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> tx = 2.0F * (qy * z - qz * y);</div>
+<div class="line"><span class="lineno">   75</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> ty = 2.0F * (qz * x - qx * z);</div>
+<div class="line"><span class="lineno">   76</span>  <span class="keyword">const</span> <span class="keywordtype">float</span> tz = 2.0F * (qx * y - qy * x);</div>
+<div class="line"><span class="lineno">   77</span>  transformed_x =</div>
+<div class="line"><span class="lineno">   78</span>      x + qw * tx + (qy * tz - qz * ty) + inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">start_translation</a>[0] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">end_translation</a>[0];</div>
+<div class="line"><span class="lineno">   79</span>  transformed_y =</div>
+<div class="line"><span class="lineno">   80</span>      y + qw * ty + (qz * tx - qx * tz) + inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">start_translation</a>[1] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">end_translation</a>[1];</div>
+<div class="line"><span class="lineno">   81</span>  transformed_z =</div>
+<div class="line"><span class="lineno">   82</span>      z + qw * tz + (qx * ty - qy * tx) + inverse_alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a782ca63f8ac71d6f78005ea9bfc36712">start_translation</a>[2] + alpha * transform.<a class="code hl_variable" href="structpoint__cloud__fusion_1_1MotionTransform.html#a4beba3c92c63c9905e2f16449286c8a9">end_translation</a>[2];</div>
+<div class="line"><span class="lineno">   83</span>}</div>
+</div><!-- fragment -->
+</div>
+</div>
+<a id="a8e896f32e864c7096b53e09d3cbd3a89" name="a8e896f32e864c7096b53e09d3cbd3a89"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8e896f32e864c7096b53e09d3cbd3a89">&#9670;&#160;</a></span>writeScalarField()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool point_cloud_fusion::writeScalarField </td>
+          <td>(</td>
+          <td class="paramtype">uint8_t *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint8_t</td>          <td class="paramname"><span class="paramname"><em>datatype</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">bool</td>          <td class="paramname"><span class="paramname"><em>bigendian</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float</td>          <td class="paramname"><span class="paramname"><em>value</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Convert and write a floating-point value to a PointField scalar. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">data</td><td>Address of the destination scalar. </td></tr>
+    <tr><td class="paramname">datatype</td><td>sensor_msgs::msg::PointField datatype identifier. </td></tr>
+    <tr><td class="paramname">bigendian</td><td>Whether the destination cloud uses big-endian byte order. </td></tr>
+    <tr><td class="paramname">value</td><td>Value to convert and write. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>True when the datatype is supported. </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="feature__calibration_8cpp_source.html#l00115">115</a> of file <a class="el" href="feature__calibration_8cpp_source.html">feature_calibration.cpp</a>.</p>
+<div class="fragment"><div class="line"><span class="lineno">  115</span>                                                                                    {</div>
+<div class="line"><span class="lineno">  116</span>  <span class="keyword">using </span>Field = sensor_msgs::msg::PointField;</div>
+<div class="line"><span class="lineno">  117</span>  <span class="keywordflow">switch</span> (datatype) {</div>
+<div class="line"><span class="lineno">  118</span>    <span class="keywordflow">case</span> Field::INT8:</div>
+<div class="line"><span class="lineno">  119</span>      storeScalar(data, bigendian, saturate&lt;int8_t&gt;(value));</div>
+<div class="line"><span class="lineno">  120</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">  121</span>    <span class="keywordflow">case</span> Field::UINT8:</div>
+<div class="line"><span class="lineno">  122</span>      storeScalar(data, bigendian, saturate&lt;uint8_t&gt;(value));</div>
+<div class="line"><span class="lineno">  123</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">  124</span>    <span class="keywordflow">case</span> Field::INT16:</div>
+<div class="line"><span class="lineno">  125</span>      storeScalar(data, bigendian, saturate&lt;int16_t&gt;(value));</div>
+<div class="line"><span class="lineno">  126</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">  127</span>    <span class="keywordflow">case</span> Field::UINT16:</div>
+<div class="line"><span class="lineno">  128</span>      storeScalar(data, bigendian, saturate&lt;uint16_t&gt;(value));</div>
+<div class="line"><span class="lineno">  129</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">  130</span>    <span class="keywordflow">case</span> Field::INT32:</div>
+<div class="line"><span class="lineno">  131</span>      storeScalar(data, bigendian, saturate&lt;int32_t&gt;(value));</div>
+<div class="line"><span class="lineno">  132</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">  133</span>    <span class="keywordflow">case</span> Field::UINT32:</div>
+<div class="line"><span class="lineno">  134</span>      storeScalar(data, bigendian, saturate&lt;uint32_t&gt;(value));</div>
+<div class="line"><span class="lineno">  135</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">  136</span>    <span class="keywordflow">case</span> Field::FLOAT32:</div>
+<div class="line"><span class="lineno">  137</span>      storeScalar(data, bigendian, value);</div>
+<div class="line"><span class="lineno">  138</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">  139</span>    <span class="keywordflow">case</span> Field::FLOAT64:</div>
+<div class="line"><span class="lineno">  140</span>      storeScalar(data, bigendian, <span class="keyword">static_cast&lt;</span><span class="keywordtype">double</span><span class="keyword">&gt;</span>(value));</div>
+<div class="line"><span class="lineno">  141</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><span class="lineno">  142</span>    <span class="keywordflow">default</span>:</div>
+<div class="line"><span class="lineno">  143</span>      <span class="keywordflow">return</span> <span class="keyword">false</span>;</div>
+<div class="line"><span class="lineno">  144</span>  }</div>
+<div class="line"><span class="lineno">  145</span>  <span class="keywordflow">return</span> <span class="keyword">true</span>;</div>
+<div class="line"><span class="lineno">  146</span>}</div>
 </div><!-- fragment -->
 </div>
 </div>
@@ -302,7 +608,7 @@ template&lt;typename C &gt; </div>
 </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="point__cloud__fusion_8hpp_source.html#l00043">43</a> of file <a class="el" href="point__cloud__fusion_8hpp_source.html">point_cloud_fusion.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="point__cloud__fusion_8hpp_source.html#l00046">46</a> of file <a class="el" href="point__cloud__fusion_8hpp_source.html">point_cloud_fusion.hpp</a>.</p>
 
 </div>
 </div>

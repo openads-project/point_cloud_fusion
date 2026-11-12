@@ -1,5 +1,6 @@
 var searchData=
 [
-  ['fields_0',['fields',['../test__motion__compensation_8cpp.html#aef54c91611086ab48d7a51a37d6fa8df',1,'test_motion_compensation.cpp']]],
-  ['fixed_5fpoints_5fper_5finput_5fcloud_5f_1',['fixed_points_per_input_cloud_',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a330fb9476df445f5d0b347d6df1e071d',1,'point_cloud_fusion::PointCloudFusion']]]
+  ['destination_5fdatatype_0',['destination_datatype',['../structpoint__cloud__fusion_1_1detail_1_1FieldConversion.html#ac945160f918e35d1c2b269a153c10de5',1,'point_cloud_fusion::detail::FieldConversion']]],
+  ['destination_5foffset_1',['destination_offset',['../structpoint__cloud__fusion_1_1detail_1_1FieldCopy.html#a63af9b0dc640972e08ed698c81d9a1ca',1,'point_cloud_fusion::detail::FieldCopy::destination_offset'],['../structpoint__cloud__fusion_1_1detail_1_1FieldFill.html#a81d9d66526f7d3fd99728e8d9aee4782',1,'point_cloud_fusion::detail::FieldFill::destination_offset'],['../structpoint__cloud__fusion_1_1detail_1_1FieldConversion.html#a47d360b84d07529b2a8aa978aec23658',1,'point_cloud_fusion::detail::FieldConversion::destination_offset']]],
+  ['doppler_5fsign_2',['doppler_sign',['../structpoint__cloud__fusion_1_1ObjectMotion.html#a79a36fecc9221cac43cccea3ae7ada98',1,'point_cloud_fusion::ObjectMotion']]]
 ];

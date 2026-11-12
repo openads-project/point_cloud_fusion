@@ -48,7 +48,7 @@ var NAVTREE =
       [ "Class Index", "classes.html", null ],
       [ "Class Hierarchy", "hierarchy.html", "hierarchy" ],
       [ "Class Members", "functions.html", [
-        [ "All", "functions.html", null ],
+        [ "All", "functions.html", "functions_dup" ],
         [ "Functions", "functions_func.html", null ],
         [ "Variables", "functions_vars.html", null ],
         [ "Typedefs", "functions_type.html", null ],
@@ -67,7 +67,9 @@ var NAVTREE =
 
 var NAVTREEINDEX =
 [
-"annotated.html"
+"annotated.html",
+"feature__calibration_8cpp_source.html",
+"structpoint__cloud__fusion_1_1detail_1_1InputLayout.html#a313778bbfe0c4f87039d14f6bb3c5d90"
 ];
 
 var SYNCONMSG = 'click to disable panel synchronisation';

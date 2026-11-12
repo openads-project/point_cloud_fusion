@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['validateinputtopicsparameter_0',['validateInputTopicsParameter',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a0e1de8da502ea004fc17fb3be91cb137',1,'point_cloud_fusion::PointCloudFusion']]],
-  ['validaterangelimits_1',['validateRangeLimits',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a2d9f23d9ac86afa8133ffd7ecc4e0e59',1,'point_cloud_fusion::PointCloudFusion']]]
+  ['operator_3d_0',['operator=',['../classpoint__cloud__fusion_1_1DistributionFeatureCalibrator.html#a4e3bc02ed0147bc5294f85a349dcbaa9',1,'point_cloud_fusion::DistributionFeatureCalibrator::operator=(const DistributionFeatureCalibrator &amp;)=delete'],['../classpoint__cloud__fusion_1_1DistributionFeatureCalibrator.html#a7da7b98c6b2cafbbaafbd93f721846d0',1,'point_cloud_fusion::DistributionFeatureCalibrator::operator=(DistributionFeatureCalibrator &amp;&amp;)=delete'],['../classpoint__cloud__fusion_1_1PointCloudFusion.html#aba07e701791680a7537137f518614f22',1,'point_cloud_fusion::PointCloudFusion::operator=(const PointCloudFusion &amp;)=delete'],['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a48d8674caf5d6161fe0d422806e56607',1,'point_cloud_fusion::PointCloudFusion::operator=(PointCloudFusion &amp;&amp;)=delete']]],
+  ['outputstamp_1',['outputStamp',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a53fa0f65b2bedf928eefaf01aa9999ca',1,'point_cloud_fusion::PointCloudFusion']]]
 ];

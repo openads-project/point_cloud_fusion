@@ -1,7 +1,11 @@
 var searchData=
 [
   ['declareandloadparameter_0',['declareAndLoadParameter',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a4e3b2bf831be52454237cd87a8a9dcfd',1,'point_cloud_fusion::PointCloudFusion']]],
-  ['development_1',['💻 Development',['../index.html#autotoc_md2',1,'']]],
-  ['development_20environment_2',['Set up Development Environment',['../index.html#autotoc_md3',1,'']]],
-  ['documentation_3',['📝 Documentation',['../index.html#autotoc_md6',1,'']]]
+  ['destination_5fdatatype_1',['destination_datatype',['../structpoint__cloud__fusion_1_1detail_1_1FieldConversion.html#ac945160f918e35d1c2b269a153c10de5',1,'point_cloud_fusion::detail::FieldConversion']]],
+  ['destination_5foffset_2',['destination_offset',['../structpoint__cloud__fusion_1_1detail_1_1FieldCopy.html#a63af9b0dc640972e08ed698c81d9a1ca',1,'point_cloud_fusion::detail::FieldCopy::destination_offset'],['../structpoint__cloud__fusion_1_1detail_1_1FieldFill.html#a81d9d66526f7d3fd99728e8d9aee4782',1,'point_cloud_fusion::detail::FieldFill::destination_offset'],['../structpoint__cloud__fusion_1_1detail_1_1FieldConversion.html#a47d360b84d07529b2a8aa978aec23658',1,'point_cloud_fusion::detail::FieldConversion::destination_offset']]],
+  ['development_3',['💻 Development',['../index.html#autotoc_md2',1,'']]],
+  ['development_20environment_4',['Set up Development Environment',['../index.html#autotoc_md3',1,'']]],
+  ['distributionfeaturecalibrator_5',['DistributionFeatureCalibrator',['../classpoint__cloud__fusion_1_1DistributionFeatureCalibrator.html',1,'point_cloud_fusion::DistributionFeatureCalibrator'],['../classpoint__cloud__fusion_1_1DistributionFeatureCalibrator.html#a376c55cf4d8db6887954a6633cd8a901',1,'point_cloud_fusion::DistributionFeatureCalibrator::DistributionFeatureCalibrator(Config config, LogCallback log_callback={})'],['../classpoint__cloud__fusion_1_1DistributionFeatureCalibrator.html#a1df2b76f5ffd8d05f80841dee1028758',1,'point_cloud_fusion::DistributionFeatureCalibrator::DistributionFeatureCalibrator(const DistributionFeatureCalibrator &amp;)=delete'],['../classpoint__cloud__fusion_1_1DistributionFeatureCalibrator.html#a74ad66568cc8de6c63a84dd211299977',1,'point_cloud_fusion::DistributionFeatureCalibrator::DistributionFeatureCalibrator(DistributionFeatureCalibrator &amp;&amp;)=delete']]],
+  ['documentation_6',['📝 Documentation',['../index.html#autotoc_md6',1,'']]],
+  ['doppler_5fsign_7',['doppler_sign',['../structpoint__cloud__fusion_1_1ObjectMotion.html#a79a36fecc9221cac43cccea3ae7ada98',1,'point_cloud_fusion::ObjectMotion']]]
 ];

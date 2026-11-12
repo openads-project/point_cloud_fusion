@@ -1,11 +1,19 @@
 var searchData=
 [
-  ['cloud_5fpublisher_5f_0',['cloud_publisher_',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#ae94dbf602d6f2e76e2e3115e94de0f4a',1,'point_cloud_fusion::PointCloudFusion']]],
-  ['cloud_5fsubscriber_5fcallback_5fgroups_5f_1',['cloud_subscriber_callback_groups_',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#ad41af29c65d1f679a0c6fada80e0930e',1,'point_cloud_fusion::PointCloudFusion']]],
-  ['cloud_5fsubscribers_5f_2',['cloud_subscribers_',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#af0e7ef91e62daab7fafcfe1136b98bf0',1,'point_cloud_fusion::PointCloudFusion']]],
-  ['collecttiminginfo_3',['collectTimingInfo',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#aa0d8a7cadbb285df051209a7f0da705d',1,'point_cloud_fusion::PointCloudFusion']]],
-  ['config_5fmutex_5f_4',['config_mutex_',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a758e3c78bc2a685f668221478f119c25',1,'point_cloud_fusion::PointCloudFusion']]],
-  ['configureoutputstampmode_5',['configureOutputStampMode',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a3dd5f3a5c679b15b5415a6a30d8fb4ca',1,'point_cloud_fusion::PointCloudFusion']]],
-  ['connectinputs_6',['connectInputs',['../namespacepoint__cloud__fusion_1_1detail.html#aef43dd35bdbe4b07ee31c7387ab42695',1,'point_cloud_fusion::detail']]],
-  ['connectinputsimpl_7',['connectInputsImpl',['../namespacepoint__cloud__fusion_1_1detail.html#a1393913857086cfe98b000a366f22511',1,'point_cloud_fusion::detail']]]
+  ['calibrationoutputfield_0',['calibrationOutputField',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a9fbe9f72d092ee2fca255cfd2108130a',1,'point_cloud_fusion::PointCloudFusion']]],
+  ['cloud_5fpublisher_5f_1',['cloud_publisher_',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#ae94dbf602d6f2e76e2e3115e94de0f4a',1,'point_cloud_fusion::PointCloudFusion']]],
+  ['cloud_5fsubscriber_5fcallback_5fgroups_5f_2',['cloud_subscriber_callback_groups_',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#ad41af29c65d1f679a0c6fada80e0930e',1,'point_cloud_fusion::PointCloudFusion']]],
+  ['cloud_5fsubscribers_5f_3',['cloud_subscribers_',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#af0e7ef91e62daab7fafcfe1136b98bf0',1,'point_cloud_fusion::PointCloudFusion']]],
+  ['collecttiminginfo_4',['collectTimingInfo',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#aa0d8a7cadbb285df051209a7f0da705d',1,'point_cloud_fusion::PointCloudFusion']]],
+  ['compensateobjectmotion_5',['compensateObjectMotion',['../namespacepoint__cloud__fusion.html#a55f04c01d73146d297892351ddc70fde',1,'point_cloud_fusion']]],
+  ['config_6',['Config',['../structpoint__cloud__fusion_1_1DistributionFeatureCalibrator_1_1Config.html',1,'point_cloud_fusion::DistributionFeatureCalibrator']]],
+  ['config_5f_7',['config_',['../classpoint__cloud__fusion_1_1DistributionFeatureCalibrator.html#ad1d09c0ef75ce754eb901df859764d7b',1,'point_cloud_fusion::DistributionFeatureCalibrator']]],
+  ['config_5fmutex_5f_8',['config_mutex_',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a758e3c78bc2a685f668221478f119c25',1,'point_cloud_fusion::PointCloudFusion']]],
+  ['configurefeaturecalibration_9',['configureFeatureCalibration',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a9698e0df49544b89a5bdf446ed86d8e8',1,'point_cloud_fusion::PointCloudFusion']]],
+  ['configureoutputstampmode_10',['configureOutputStampMode',['../classpoint__cloud__fusion_1_1PointCloudFusion.html#a3dd5f3a5c679b15b5415a6a30d8fb4ca',1,'point_cloud_fusion::PointCloudFusion']]],
+  ['conflicting_5ffields_11',['conflicting_fields',['../structpoint__cloud__fusion_1_1detail_1_1BatchLayout.html#a545a18196eca5fbc49f29bc5224239e0',1,'point_cloud_fusion::detail::BatchLayout']]],
+  ['connectinputs_12',['connectInputs',['../namespacepoint__cloud__fusion_1_1detail.html#aef43dd35bdbe4b07ee31c7387ab42695',1,'point_cloud_fusion::detail']]],
+  ['connectinputsimpl_13',['connectInputsImpl',['../namespacepoint__cloud__fusion_1_1detail.html#a1393913857086cfe98b000a366f22511',1,'point_cloud_fusion::detail']]],
+  ['conversions_14',['conversions',['../structpoint__cloud__fusion_1_1detail_1_1InputLayout.html#a77e9ebad8eb757a55058f264ed0cb6b0',1,'point_cloud_fusion::detail::InputLayout']]],
+  ['copies_15',['copies',['../structpoint__cloud__fusion_1_1detail_1_1InputLayout.html#a5b8d277e0089e71839cc04aaebc89a3f',1,'point_cloud_fusion::detail::InputLayout']]]
 ];
